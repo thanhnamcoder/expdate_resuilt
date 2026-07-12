@@ -1,0 +1,23 @@
+asgiref==3.8.1
+certifi==2025.4.26
+Django==4.1.13
+django-cors-headers==3.14.0 # 4.x yêu cầu Django >=4.2, nên cần dùng bản 3.14.0 cho Django 4.1
+djangorestframework==3.14.0 # bản ổn định, tương thích với Django 4.1
+djangorestframework_simplejwt==5.2.2 # tương thích với DRF 3.14, Django 4.1
+elastic-transport==8.17.1
+elasticsearch==7.17.0
+et_xmlfile==2.0.0
+Faker==37.3.0
+gunicorn==23.0.0
+openpyxl==3.1.5
+packaging==25.0
+PyJWT==2.9.0
+PyMySQL==1.1.1
+python-dateutil==2.9.0.post0
+six==1.17.0
+sqlparse==0.5.3
+typing_extensions==4.13.2
+tzdata==2025.2
+Unidecode==1.4.0
+urllib3==1.26.20
+whitenoise==6.9.0

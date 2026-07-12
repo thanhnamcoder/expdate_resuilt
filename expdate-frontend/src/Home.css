@@ -1,0 +1,85 @@
+.suggestions-dropdown {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  width: 100%;
+  background-color: #fff;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  z-index: 2000;
+  overflow: hidden;
+}
+
+.suggestion-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 12px 14px;
+  width: 100%;
+  border: none;
+  background: white;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+  min-height: 72px;
+}
+
+.suggestion-item + .suggestion-item {
+  border-top: 1px solid #f1f1f1;
+}
+
+.suggestion-item:hover,
+.suggestion-item:focus {
+  background: #f5f7ff;
+}
+
+.suggestion-item .fw-bold {
+  font-size: 0.95rem;
+}
+
+.suggestion-item .text-muted {
+  font-size: 0.82rem;
+  color: #6c757d;
+}
+
+.suggestion-badge {
+  margin-top: 0;
+}
+
+/* New helper classes for tidy layout */
+.suggestion-name {
+  overflow: hidden;
+  font-size: 0.95rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.1rem;
+  max-height: 2.3rem; /* approx 2 lines */
+}
+
+.suggestion-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.suggestion-barcode {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #6c757d;
+  font-size: 0.82rem;
+}
+
+/* Make the dropdown responsive */
+@media (max-width: 768px) {
+  .suggestions-dropdown {
+    left: 0;
+    right: 0;
+    border-radius: 6px;
+  }
+}

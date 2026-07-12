@@ -1,0 +1,76 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+    <div>
+        <form action="." method="POST" enctype="multipart/form-data">
+            {{ form.as_p }}
+            {% csrf_token %}
+            <div class="submit-row">
+                <input type="submit" value="Import Excel" class="default" style="float: none"/>
+            </div>
+        </form>
+    </div>
+    <br/>
+    <div>
+        <h3>Hướng dẫn:</h3>
+        <p>File Excel cần có các cột sau (thứ tự không quan trọng):</p>
+        <table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">
+            <thead>
+                <tr>
+                    <th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">Tên cột</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">Mô tả</th>
+                    <th style="border: 1px solid #ddd; padding: 8px; background-color: #f5f5f5;">Ví dụ</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Item Barcode</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Mã vạch sản phẩm</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">8936136160123</td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Item Code</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Mã sản phẩm</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">SKU123</td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Item Name</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Tên sản phẩm</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Sữa tươi Vinamilk</td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Department</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Phòng ban</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Thực phẩm</td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Category</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Danh mục</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Sữa</td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Sub Category</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Danh mục con</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Sữa tươi</td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Vendor Code</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Mã nhà cung cấp</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">VNM</td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Vendor Name</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Tên nhà cung cấp</td>
+                    <td style="border: 1px solid #ddd; padding: 8px;">Vinamilk</td>
+                </tr>
+            </tbody>
+        </table>
+        <p><strong>Lưu ý:</strong></p>
+        <ul>
+            <li>File phải có đầy đủ các cột trên (thứ tự không quan trọng)</li>
+            <li>Dòng đầu tiên phải là tên cột chính xác như trong bảng trên</li>
+            <li>Các cột khác trong file sẽ được bỏ qua</li>
+            <li>Dữ liệu sẽ được import vào bảng product_data trong MySQL</li>
+        </ul>
+    </div>
+{% endblock %} 

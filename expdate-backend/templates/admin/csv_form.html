@@ -1,0 +1,29 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+    <div>
+        <form action="." method="POST" enctype="multipart/form-data">
+            {{ form.as_p }}
+            {% csrf_token %}
+            <div class="submit-row">
+                <input type="submit" value="Import CSV" class="default" style="float: none"/>
+            </div>
+        </form>
+    </div>
+    <br/>
+    <div>
+        <h3>Hướng dẫn:</h3>
+        <p>File CSV cần có các cột theo thứ tự sau:</p>
+        <ul>
+            <li>barcode</li>
+            <li>itemname</li>
+            <li>quantity</li>
+            <li>expdate (định dạng YYYY-MM-DD)</li>
+            <li>username</li>
+        </ul>
+        <p>Ví dụ:</p>
+        <pre>barcode,itemname,quantity,expdate,username
+123456,Item 1,10,2024-12-31,user1
+789012,Item 2,5,2024-12-31,user2</pre>
+    </div>
+{% endblock %} 
