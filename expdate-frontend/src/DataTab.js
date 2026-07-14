@@ -205,6 +205,35 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
     setPreviewIndex((i) => (previewImages ? (i + 1) % previewImages.length : 0));
   };
 
+  // Khoá cuộn trang nền khi preview ảnh toàn màn hình đang mở, tránh việc
+  // vuốt/cuộn trên di động vô tình làm trang phía sau cuộn theo.
+  useEffect(() => {
+    if (!previewImages) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [previewImages]);
+
+  // Hỗ trợ điều hướng bằng bàn phím khi preview ảnh toàn màn hình đang mở:
+  // Esc để đóng, mũi tên trái/phải để chuyển ảnh trước/sau.
+  useEffect(() => {
+    if (!previewImages) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        closeImagePreview();
+      } else if (e.key === 'ArrowLeft' && previewImages.length > 1) {
+        showPrevImage();
+      } else if (e.key === 'ArrowRight' && previewImages.length > 1) {
+        showNextImage();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewImages]);
+
 
   // Xuất Excel + ảnh của batch bằng cách gọi thẳng endpoint export phía server
   // (server đọc file ảnh trực tiếp từ ổ đĩa và đóng gói zip), thay vì tự fetch
@@ -1016,7 +1045,7 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
                         title="Xem ảnh"
                         onClick={(e) => { e.stopPropagation(); openImagePreview(selectedWriteoffBatch.images, 0); }}
                       >
-                        📷 {selectedWriteoffBatch.images.length}
+                        📷
                       </button>
                     ) : null}
                     {selectedWriteoffBatch ? (
@@ -1157,7 +1186,7 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
                                     title="Xem ảnh"
                                     onClick={(e) => { e.stopPropagation(); openImagePreview(batch.images, 0); }}
                                   >
-                                    📷 {batch.images.length}
+                                    📷
                                   </button>
                                 ) : null}
                                 <button
@@ -1214,47 +1243,76 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
         
       )}
       {previewImages && (
-        <>
-          <div className="modal-backdrop fade show" style={{ zIndex: 1070 }} onClick={closeImagePreview}></div>
-          <div className="modal fade show" style={{ display: 'block', zIndex: 1080 }} tabIndex="-1">
-            <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 800 }}>
-              <div className="modal-content bg-dark">
-                <div className="modal-header border-0">
-                  <span className="text-white small">Ảnh {previewIndex + 1}/{previewImages.length}</span>
-                  <button type="button" className="btn-close btn-close-white ms-auto" onClick={closeImagePreview}></button>
-                </div>
-                <div className="modal-body text-center position-relative d-flex align-items-center justify-content-center" style={{ minHeight: 300 }}>
-                  {previewImages.length > 1 ? (
-                    <button
-                      type="button"
-                      className="btn btn-light position-absolute top-50 start-0 translate-middle-y ms-2"
-                      onClick={showPrevImage}
-                      aria-label="Ảnh trước"
-                    >
-                      ‹
-                    </button>
-                  ) : null}
-                  <img
-                    src={previewImages[previewIndex]}
-                    alt={`writeoff-${previewIndex + 1}`}
-                    style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain' }}
-                  />
-                  {previewImages.length > 1 ? (
-                    <button
-                      type="button"
-                      className="btn btn-light position-absolute top-50 end-0 translate-middle-y me-2"
-                      onClick={showNextImage}
-                      aria-label="Ảnh tiếp theo"
-                    >
-                      ›
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            </div>
+        <div
+          className="d-flex flex-column"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.97)',
+            zIndex: 2000,
+          }}
+          onClick={closeImagePreview}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Xem ảnh toàn màn hình"
+        >
+          {/* Thanh trên cùng: số thứ tự ảnh + nút đóng, không đóng preview khi bấm vào chính thanh này */}
+          <div
+            className="d-flex align-items-center justify-content-between px-3"
+            style={{ height: 56, flex: '0 0 auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="text-white small">
+              Ảnh {previewIndex + 1}/{previewImages.length}
+            </span>
+            <button
+              type="button"
+              className="btn-close btn-close-white"
+              onClick={closeImagePreview}
+              aria-label="Đóng"
+              style={{ opacity: 0.9 }}
+            ></button>
           </div>
-        </>
 
+          {/* Vùng ảnh chiếm toàn bộ phần còn lại của màn hình */}
+          <div
+            className="d-flex align-items-center justify-content-center position-relative flex-grow-1"
+            style={{ minHeight: 0 }}
+          >
+            {previewImages.length > 1 ? (
+              <button
+                type="button"
+                className="btn btn-light position-absolute top-50 start-0 translate-middle-y ms-2 ms-md-4 rounded-circle d-flex align-items-center justify-content-center"
+                style={{ width: 44, height: 44, opacity: 0.85 }}
+                onClick={(e) => { e.stopPropagation(); showPrevImage(); }}
+                aria-label="Ảnh trước"
+              >
+                ‹
+              </button>
+            ) : null}
+
+            <img
+              src={previewImages[previewIndex]}
+              alt={`writeoff-${previewIndex + 1}`}
+              style={{ maxWidth: '96vw', maxHeight: '100%', objectFit: 'contain' }}
+              onClick={(e) => e.stopPropagation()}
+            />
+
+            {previewImages.length > 1 ? (
+              <button
+                type="button"
+                className="btn btn-light position-absolute top-50 end-0 translate-middle-y me-2 me-md-4 rounded-circle d-flex align-items-center justify-content-center"
+                style={{ width: 44, height: 44, opacity: 0.85 }}
+                onClick={(e) => { e.stopPropagation(); showNextImage(); }}
+                aria-label="Ảnh tiếp theo"
+              >
+                ›
+              </button>
+            ) : null}
+          </div>
+        </div>
       )}
       {showShareModal && (
         <>
