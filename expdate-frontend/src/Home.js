@@ -6,6 +6,7 @@ import './Home.css';
 
 import QrScanner from './QrScanner';
 import MessageBox from './components/MessageBox';
+import { getMissingFieldsMessage, getServerErrorMessage } from './utils/errorMessages';
 import debounce from 'lodash.debounce';
 import { authFetch } from './utils/authFetch';
 import { mergeWoPendingItems, aggregateWoPayload } from './utils/woHelpers';
@@ -294,14 +295,14 @@ const handleSelectItem = async (item) => {
       let data = {};
       try { data = await res.json(); } catch {}
       if (!res.ok) {
-        showMessage((data && data.error) || 'Xóa thất bại', 'error');
+        showMessage(getServerErrorMessage(data, 'Xóa thất bại.'), 'error');
         return;
       }
       setUserItems(prev => prev.filter(i => i.id !== itemId));
       showMessage('Xóa sản phẩm thành công');
     } catch (e) {
       console.error(e);
-      showMessage('Lỗi khi xóa sản phẩm', 'error');
+      showMessage('Lỗi khi xóa sản phẩm. Vui lòng kiểm tra kết nối mạng và thử lại.', 'error');
     }
   };
 
@@ -490,7 +491,10 @@ const debouncedFetchItem = useCallback(
         credentials: 'include',
       });
 
-      if (!response.ok) throw new Error('Failed to fetch product data');
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => null);
+        throw new Error(getServerErrorMessage(errBody, 'Không lấy được dữ liệu sản phẩm từ server.'));
+      }
 
       const { data } = await response.json();
 
@@ -522,7 +526,7 @@ const debouncedFetchItem = useCallback(
         console.log('Fetch aborted');
       } else {
         console.error(error);
-        showMessage('Lỗi khi lấy dữ liệu sản phẩm. Vui lòng thử lại.', 'error');
+        showMessage(error.message || 'Lỗi khi lấy dữ liệu sản phẩm. Vui lòng thử lại.', 'error');
       }
     } finally {
       setLoading(false);
@@ -696,8 +700,13 @@ const handleAddOptionalName = () => {
     const quantity = (document.getElementById('quantityInput')?.value || '').trim();
     const groupName = woName.trim();
 
-    if (!barcode || !itemname || !quantity) {
-      throw new Error('Vui lòng điền đầy đủ thông tin.');
+    const missingMsg = getMissingFieldsMessage({
+      Barcode: barcode,
+      'Tên sản phẩm': itemname,
+      'Số lượng': quantity,
+    });
+    if (missingMsg) {
+      throw new Error(missingMsg);
     }
 
     const today = new Date();
@@ -765,7 +774,7 @@ const handleAddOptionalName = () => {
 
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(result.message || 'Failed to save WO batch');
+        throw new Error(getServerErrorMessage(result, 'Lưu danh sách WO thất bại.'));
       }
 
       // success
@@ -810,7 +819,14 @@ const handleAddOptionalName = () => {
         expdateRaw = (document.getElementById('expDateInput')?.value || '').trim();
       } else {
         if (!calculatedExpiry) {
-          showMessage('Vui lòng điền đầy đủ thông tin ngày sản xuất và thời hạn.', 'error');
+          const durationValue = (document.getElementById('durationInput')?.value || '').trim();
+          const missingMsg = getMissingFieldsMessage({
+            'Ngày (sản xuất)': mfgDate.day,
+            'Tháng (sản xuất)': mfgDate.month,
+            'Năm (sản xuất)': mfgDate.year,
+            'Thời hạn sử dụng': durationValue,
+          });
+          showMessage(missingMsg || 'Vui lòng điền đầy đủ thông tin ngày sản xuất và thời hạn.', 'error');
           setSubmitLoading(false);
           return;
         }
@@ -820,8 +836,14 @@ const handleAddOptionalName = () => {
       }
     }
 
-    if (!barcode || !itemname || !quantity || (!isWriteoffMode && !expdateRaw)) {
-      showMessage('Vui lòng điền đầy đủ thông tin.', 'error');
+    const missingMsg = getMissingFieldsMessage({
+      Barcode: barcode,
+      'Tên sản phẩm': itemname,
+      'Số lượng': quantity,
+      ...(isWriteoffMode ? {} : { 'Hạn sử dụng': expdateRaw }),
+    });
+    if (missingMsg) {
+      showMessage(missingMsg, 'error');
       setSubmitLoading(false);
       return;
     }
@@ -869,7 +891,7 @@ const handleAddOptionalName = () => {
 
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(result.message || 'Failed to update item');
+          throw new Error(getServerErrorMessage(result, 'Cập nhật sản phẩm thất bại.'));
         }
 
         // Prefer server-provided item (includes created_at). Fallback to payload+existing.
@@ -909,7 +931,7 @@ const handleAddOptionalName = () => {
         const result = await response.json();
 
         if (!response.ok) {
-          throw new Error(result.message || 'Failed to save item');
+          throw new Error(getServerErrorMessage(result, 'Lưu sản phẩm thất bại.'));
         }
 
         let savedItem = {

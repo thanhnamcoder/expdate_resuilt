@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import config from './config.json';
 import { authFetch } from './utils/authFetch';
+import { getServerErrorMessage } from './utils/errorMessages';
 
 const API_URL = config.server;
 
@@ -43,7 +44,7 @@ const response = await fetch(`${API_URL}/api/accounts/login/`, {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.error || 'Login failed');
+        setError(getServerErrorMessage(data, 'Đăng nhập thất bại. Vui lòng kiểm tra lại tên đăng nhập/mật khẩu.'));
         setLoading(false); // Stop loading on error
         return;
       }

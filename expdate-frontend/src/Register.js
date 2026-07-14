@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import config from './config.json';
+import { getServerErrorMessage } from './utils/errorMessages';
 const API_URL = config.server;
 
 function Register() {
@@ -57,9 +58,10 @@ console.log('Sending payload:', payload);
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        // Nếu backend trả lỗi dạng { message: "..." } hoặc lỗi cụ thể, bạn xử lý ở đây
-        setError(errData.message || 'Registration failed');
+        const errData = await response.json().catch(() => ({}));
+        // Nếu backend trả lỗi dạng { message }, { error }, hoặc lỗi theo từng field
+        // (vd: { username: ["đã tồn tại"] }) thì đều được lấy ra đúng nội dung.
+        setError(getServerErrorMessage(errData, 'Đăng ký thất bại. Vui lòng thử lại.'));
         return;
       }
 
