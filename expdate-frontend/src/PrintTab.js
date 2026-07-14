@@ -154,7 +154,8 @@ function PrintTab({ allProducts = [], savedState, saveState }) {
     setBarcodeValues(prev => ({ ...prev, [selectedSize]: decodedText }));
     setScanResult(decodedText);
     setShowModal(false);
-    setMessage('Quét mã thành công!', 'success');
+    setMessage('Quét mã thành công!');
+    setMessageType('success');
     // Lọc autocomplete như khi nhập input
     if (allProducts.length > 0) {
       const normalized = decodedText.trim().toLowerCase();

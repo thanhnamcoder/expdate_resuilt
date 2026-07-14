@@ -1,18 +1,21 @@
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib import admin
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connections
 from django.test import TestCase
+from django.utils import timezone
 from openpyxl import Workbook
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from .admin import ItemAdmin
 from .item_views import ItemBatchCreateView, ItemCreateView, ProductCostLookupView, ProductCostListView, WriteOffBatchDeleteView, WriteOffItemDeleteView
-from .models import Item, PackingList, ProductCost, ProductData, WriteOffBatch, WriteOffItem
+from .mail_api import SendEmailAPIView
+from .models import Item, PackingList, ProductCost, ProductData, WriteOffArchive, WriteOffBatch, WriteOffItem
 
 
 class ItemAdminImportCostTests(TestCase):
@@ -320,7 +323,39 @@ class WriteOffDeletionTests(TestCase):
         self.user = User.objects.create_user(username='tester', password='secret123')
         self.factory = APIRequestFactory()
 
-    def test_delete_writeoff_item_removes_item_and_keeps_batch(self):
+    @patch('accounts.mail_api.smtplib.SMTP')
+    def test_send_email_archives_batch_after_success(self, mock_smtp):
+        batch = WriteOffBatch.objects.create(user=self.user, name='batch-email-archive')
+        item = WriteOffItem.objects.create(
+            writeoff_batch=batch,
+            barcode='wo-email-archive',
+            itemname='Email Archive Item',
+            quantity=2,
+        )
+
+        view = SendEmailAPIView.as_view()
+        request = self.factory.post(
+            '/api/accounts/send-email/',
+            {
+                'to_email': 'tester@example.com',
+                'subject': 'Test',
+                'body_html': '<p>Hi</p>',
+                'batch_id': batch.id,
+            },
+            format='json',
+        )
+        force_authenticate(request, user=self.user)
+
+        response = view(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(WriteOffBatch.objects.filter(id=batch.id).exists())
+        self.assertFalse(WriteOffItem.objects.filter(id=item.id).exists())
+        self.assertTrue(WriteOffArchive.objects.filter(record_type='batch', source_id=batch.id).exists())
+        self.assertTrue(WriteOffArchive.objects.filter(record_type='item', source_id=item.id).exists())
+        mock_smtp.assert_called_once()
+
+    def test_delete_writeoff_item_archives_item_and_keeps_batch(self):
         batch = WriteOffBatch.objects.create(user=self.user, name='batch-delete-item')
         item = WriteOffItem.objects.create(
             writeoff_batch=batch,
@@ -338,16 +373,17 @@ class WriteOffDeletionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(WriteOffItem.objects.filter(id=item.id).exists())
         self.assertTrue(WriteOffBatch.objects.filter(id=batch.id).exists())
+        self.assertTrue(WriteOffArchive.objects.filter(record_type='item', source_id=item.id).exists())
 
-    def test_delete_writeoff_batch_removes_batch_and_items(self):
+    def test_delete_writeoff_batch_archives_batch_and_items(self):
         batch = WriteOffBatch.objects.create(user=self.user, name='batch-delete-all')
-        WriteOffItem.objects.create(
+        item_1 = WriteOffItem.objects.create(
             writeoff_batch=batch,
             barcode='wo-delete-1',
             itemname='Item 1',
             quantity=1,
         )
-        WriteOffItem.objects.create(
+        item_2 = WriteOffItem.objects.create(
             writeoff_batch=batch,
             barcode='wo-delete-2',
             itemname='Item 2',
@@ -363,3 +399,27 @@ class WriteOffDeletionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(WriteOffBatch.objects.filter(id=batch.id).exists())
         self.assertFalse(WriteOffItem.objects.filter(writeoff_batch=batch).exists())
+        self.assertTrue(WriteOffArchive.objects.filter(record_type='batch', source_id=batch.id).exists())
+        self.assertTrue(WriteOffArchive.objects.filter(record_type='item', source_id=item_1.id).exists())
+        self.assertTrue(WriteOffArchive.objects.filter(record_type='item', source_id=item_2.id).exists())
+
+    def test_cleanup_old_archives_removes_entries_older_than_one_month(self):
+        old_entry = WriteOffArchive.objects.create(
+            record_type='batch',
+            source_id=999,
+            user=self.user,
+            name='old batch',
+        )
+        recent_entry = WriteOffArchive.objects.create(
+            record_type='batch',
+            source_id=1000,
+            user=self.user,
+            name='recent batch',
+        )
+        WriteOffArchive.objects.filter(id=old_entry.id).update(deleted_at=timezone.now() - timedelta(days=40))
+        WriteOffArchive.objects.filter(id=recent_entry.id).update(deleted_at=timezone.now() - timedelta(days=10))
+
+        WriteOffArchive.cleanup_old_archives()
+
+        self.assertFalse(WriteOffArchive.objects.filter(id=old_entry.id).exists())
+        self.assertTrue(WriteOffArchive.objects.filter(id=recent_entry.id).exists())

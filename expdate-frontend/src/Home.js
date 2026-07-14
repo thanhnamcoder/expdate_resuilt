@@ -368,10 +368,11 @@ const handleSelectItem = async (item) => {
       setEditSaving(false);
     }
   };
+  // Việc tự tắt (chỉ áp dụng cho type khác 'error') và việc tắt khi bấm nút
+  // đều do component MessageBox tự quản lý, showMessage chỉ cần set nội dung.
   const showMessage = (msg, type = 'success') => {
     setMessage(msg);
     setMessageType(type);
-    setTimeout(() => setMessage(null), 3000);
   };
 
   const handleScanSuccess = (decodedText) => {

@@ -63,6 +63,43 @@ class WriteOffItem(models.Model):
 
     def __str__(self):
         return f"{self.itemname} ({self.barcode})"
+
+
+class WriteOffArchive(models.Model):
+    record_type = models.CharField(max_length=20, choices=[('batch', 'Batch'), ('item', 'Item')])
+    source_id = models.IntegerField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='writeoff_archives', null=True, blank=True)
+    name = models.CharField(max_length=255, blank=True, default='')
+    barcode = models.CharField(max_length=100, blank=True, default='')
+    itemname = models.CharField(max_length=255, blank=True, default='')
+    quantity = models.IntegerField(default=0)
+    item_code = models.CharField(max_length=100, blank=True, default='')
+    unit_cost = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    total_cost = models.DecimalField(max_digits=14, decimal_places=2, default=0, blank=True)
+    file_paths = models.TextField(blank=True, default='')
+    deleted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'writeoff_archive'
+        ordering = ['-deleted_at']
+
+    @classmethod
+    def cleanup_old_archives(cls, cutoff=None):
+        from datetime import date, datetime, timedelta
+        from django.utils import timezone
+
+        if cutoff is None:
+            cutoff = timezone.now() - timedelta(days=30)
+        elif isinstance(cutoff, date) and not isinstance(cutoff, datetime):
+            cutoff = datetime.combine(cutoff, datetime.min.time())
+            cutoff = timezone.make_aware(cutoff, timezone.get_current_timezone())
+        elif isinstance(cutoff, datetime) and timezone.is_naive(cutoff):
+            cutoff = timezone.make_aware(cutoff, timezone.get_current_timezone())
+
+        return cls.objects.filter(deleted_at__lt=cutoff).delete()
+
+    def __str__(self):
+        return f"{self.record_type} #{self.source_id}"
     
 class ProductData(models.Model):
     id = models.AutoField(primary_key=True)

@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import serializers
-from .models import Item, GroupWishlist, ProductData, GroupWishlistName, PackingList, WriteOffBatch, WriteOffItem, ProductCost  # Thêm GroupWishlistName, PackingList
+from .models import Item, GroupWishlist, ProductData, GroupWishlistName, PackingList, WriteOffArchive, WriteOffBatch, WriteOffItem, ProductCost  # Thêm GroupWishlistName, PackingList
 from django.contrib.auth.models import User  # Import the User model
 from django.utils.timezone import now
 from rest_framework.permissions import IsAuthenticated
@@ -715,10 +715,21 @@ class WriteOffItemDeleteView(APIView):
         if batch and batch.user_id != user.id and not (user.is_staff or user.is_superuser):
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
+        WriteOffArchive.objects.create(
+            record_type='item',
+            source_id=item.id,
+            user=batch.user if batch else user,
+            name=item.itemname,
+            barcode=item.barcode,
+            itemname=item.itemname,
+            quantity=item.quantity,
+            item_code=item.item_code,
+            unit_cost=item.unit_cost,
+        )
         item.delete()
         remaining_count = batch.writeoff_items.count() if batch else 0
         return Response({
-            'message': 'Write-off item deleted successfully',
+            'message': 'Write-off item archived successfully',
             'batch_id': batch.id if batch else None,
             'remaining_items': remaining_count,
         }, status=status.HTTP_200_OK)
@@ -750,8 +761,32 @@ class WriteOffBatchDeleteView(APIView):
                     except OSError:
                         pass
 
+        WriteOffArchive.objects.create(
+            record_type='batch',
+            source_id=batch.id,
+            user=batch.user,
+            name=batch.name,
+            total_cost=batch.total_cost,
+            file_paths=batch.file_paths,
+        )
+
+        items = list(batch.writeoff_items.all())
+        for item in items:
+            WriteOffArchive.objects.create(
+                record_type='item',
+                source_id=item.id,
+                user=batch.user,
+                name=item.itemname,
+                barcode=item.barcode,
+                itemname=item.itemname,
+                quantity=item.quantity,
+                item_code=item.item_code,
+                unit_cost=item.unit_cost,
+            )
+
         batch.delete()
-        return Response({'message': 'Write-off batch deleted successfully'}, status=status.HTTP_200_OK)
+        WriteOffArchive.cleanup_old_archives()
+        return Response({'message': 'Write-off batch archived successfully'}, status=status.HTTP_200_OK)
 
 
 class ItemBatchCreateView(APIView):

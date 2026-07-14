@@ -322,6 +322,11 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
         alert((data && data.error) || 'Lỗi khi gửi email.');
       } else {
         alert((data && data.message) || 'Gửi email thành công');
+        setWriteoffBatches(prev => prev.filter(item => item.id !== batch.id));
+        if (selectedWriteoffBatch && selectedWriteoffBatch.id === batch.id) {
+          setSelectedWriteoffBatch(null);
+          setWriteoffBatchItems([]);
+        }
         // save email for later
         try {
           const next = [toEmail, ...savedEmails.filter(e => e !== toEmail)].slice(0, 50);

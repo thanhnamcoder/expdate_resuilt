@@ -8,7 +8,7 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 
-from .models import WriteOffBatch
+from .models import WriteOffArchive, WriteOffBatch, WriteOffItem
 from .writeoff_export_utils import build_writeoff_export_data
 
 
@@ -70,6 +70,35 @@ class SendEmailAPIView(APIView):
                 server.starttls()
                 server.login("sg0330.sm@store.circlek.com.vn", "Itck@sg0330")
                 server.sendmail(msg["From"], msg["To"], msg.as_string())
+
+            if batch_id:
+                try:
+                    batch = WriteOffBatch.objects.get(id=batch_id)
+                    WriteOffArchive.objects.create(
+                        record_type='batch',
+                        source_id=batch.id,
+                        user=batch.user,
+                        name=batch.name,
+                        total_cost=batch.total_cost,
+                        file_paths=batch.file_paths,
+                    )
+                    for item in WriteOffItem.objects.filter(writeoff_batch=batch):
+                        WriteOffArchive.objects.create(
+                            record_type='item',
+                            source_id=item.id,
+                            user=batch.user,
+                            name=item.itemname,
+                            barcode=item.barcode,
+                            itemname=item.itemname,
+                            quantity=item.quantity,
+                            item_code=item.item_code,
+                            unit_cost=item.unit_cost,
+                        )
+                    batch.delete()
+                    WriteOffArchive.cleanup_old_archives()
+                except WriteOffBatch.DoesNotExist:
+                    return Response({"error": "Batch không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
+
             return Response({"message": "✅ Gửi email thành công"}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
