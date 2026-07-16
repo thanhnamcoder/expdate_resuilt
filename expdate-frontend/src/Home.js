@@ -10,6 +10,7 @@ import { getMissingFieldsMessage, getServerErrorMessage } from './utils/errorMes
 import debounce from 'lodash.debounce';
 import { authFetch } from './utils/authFetch';
 import { mergeWoPendingItems, aggregateWoPayload } from './utils/woHelpers';
+import { getFieldErrorMap } from './utils/formValidation';
 import config from './config.json';
 
 const API_URL = config.server;
@@ -106,6 +107,7 @@ const [woNameDraft, setWoNameDraft] = useState('');
   const [showOptionalSaveButton, setShowOptionalSaveButton] = useState(false);
   const [pendingWoItems, setPendingWoItems] = useState([]);
   const [selectedItemCost, setSelectedItemCost] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   // Helper: normalize text for search (remove diacritics, lowercase, collapse punctuation)
   const normalizeForSearch = (s) => {
@@ -644,6 +646,7 @@ function normalizeServerItem(it, source = 'generic') {
 const handleBarcodeChange = (e) => {
   const barcode = e.target.value;
   setScanResult(barcode);
+  setFieldErrors((prev) => ({ ...prev, barcode: false }));
   debouncedFetchItem(barcode, false); // isScan = false for manual input
 };
 const handleEditWoName = () => {
@@ -692,6 +695,7 @@ const handleAddOptionalName = () => {
     setMfgDate({ day: '', month: '', year: '' });
     setShowDurationModal(false);
     setExpiryMethod('direct');
+    setFieldErrors({});
   };
 
   const buildWoItemData = () => {
@@ -737,6 +741,13 @@ const handleAddOptionalName = () => {
       // keep cancelImages (shared for the batch) — do not clear here
       showMessage('Đã cộng dồn số lượng vào danh sách WO');
     } catch (error) {
+      const nextErrors = getFieldErrorMap({
+        barcode: (document.getElementById('itemBarcodeInput')?.value || '').trim(),
+        itemname: (document.getElementById('itemNameInput')?.value || '').trim(),
+        quantity: (document.getElementById('quantityInput')?.value || '').trim(),
+        expdate: (document.getElementById('expDateInput')?.value || '').trim(),
+      }, { isWoMode: true });
+      setFieldErrors(nextErrors);
       showMessage(error.message || 'Vui lòng điền đầy đủ thông tin.', 'error');
     }
   };
@@ -835,6 +846,14 @@ const handleAddOptionalName = () => {
         expdateRaw = `${year}-${month}-${day}`;
       }
     }
+
+    const nextFieldErrors = getFieldErrorMap({
+      barcode,
+      itemname,
+      quantity,
+      expdate: expdateRaw,
+    }, { isWoMode: isWriteoffMode });
+    setFieldErrors(nextFieldErrors);
 
     const missingMsg = getMissingFieldsMessage({
       Barcode: barcode,
@@ -1204,7 +1223,7 @@ const totalPendingWoCost = pendingWoItems.reduce((sum, item) => {
 
 <div className="mb-3 position-relative">
   <div className="d-flex align-items-center mb-2">
-    <label htmlFor="itemBarcodeInput" className="form-label mb-0">
+    <label htmlFor="itemBarcodeInput" className={`form-label mb-0 ${fieldErrors.barcode ? 'field-error-label' : ''}`}>
       <strong>Barcode:</strong>
     </label>
     {isWoMode ? (
@@ -1361,7 +1380,7 @@ const totalPendingWoCost = pendingWoItems.reduce((sum, item) => {
     <input
       type="text"
       id="itemBarcodeInput"
-      className="form-control pe-5"
+      className={`form-control pe-5 ${fieldErrors.barcode ? 'field-error-input' : ''}`}
       value={scanResult}
       onChange={handleBarcodeChange}
       placeholder="Nhập mã barcode tại đây"
@@ -1385,7 +1404,7 @@ const totalPendingWoCost = pendingWoItems.reduce((sum, item) => {
 
 <div className="row mb-3" style={{ position: 'relative' }}>
   <div className="col-9 position-relative">
-    <label htmlFor="itemNameInput" className="form-label d-flex align-items-center">
+    <label htmlFor="itemNameInput" className={`form-label d-flex align-items-center ${fieldErrors.itemname ? 'field-error-label' : ''}`}>
       <strong>Tên sản phẩm:</strong>
       <span
         className={`ms-2 ${loading ? 'spinner-border spinner-border-sm text-primary' : 'invisible'}`}
@@ -1399,10 +1418,13 @@ const totalPendingWoCost = pendingWoItems.reduce((sum, item) => {
       <input
         type="text"
         id="itemNameInput"
-        className="form-control pe-5"
+        className={`form-control pe-5 ${fieldErrors.itemname ? 'field-error-input' : ''}`}
         placeholder="Nhập tên sản phẩm"
         disabled={loading}
-        onChange={() => setItemOptions([])}
+        onChange={() => {
+          setItemOptions([]);
+          setFieldErrors((prev) => ({ ...prev, itemname: false }));
+        }}
       />
       {document.getElementById('itemNameInput')?.value && (
         <i
@@ -1422,14 +1444,15 @@ const totalPendingWoCost = pendingWoItems.reduce((sum, item) => {
   </div>
 
   <div className="col-3">
-    <label htmlFor="quantityInput" className="form-label"><strong>SL:</strong></label>
+    <label htmlFor="quantityInput" className={`form-label ${fieldErrors.quantity ? 'field-error-label' : ''}`}><strong>SL:</strong></label>
     <input
       type="number"
       id="quantityInput"
-      className="form-control"
+      className={`form-control ${fieldErrors.quantity ? 'field-error-input' : ''}`}
       placeholder="SL"
       min="1"
       onKeyDown={handleQuantityKeyDown}
+      onChange={() => setFieldErrors((prev) => ({ ...prev, quantity: false }))}
     />
     
   </div>
@@ -1644,12 +1667,13 @@ Total Cost: {totalPendingWoCost.toLocaleString('vi-VN', {
             </div>
 
             <div style={{ display: expiryMethod === 'direct' ? 'block' : 'none' }}>
-              <label htmlFor="expDateInput" className="form-label"><strong>Ngày hết hạn:</strong></label>
+              <label htmlFor="expDateInput" className={`form-label ${fieldErrors.expdate ? 'field-error-label' : ''}`}><strong>Ngày hết hạn:</strong></label>
               <input
                 type="date"
                 id="expDateInput"
-                className="form-control mb-4"
+                className={`form-control mb-4 ${fieldErrors.expdate ? 'field-error-input' : ''}`}
                 placeholder="dd/mm/yyyy"
+                onChange={() => setFieldErrors((prev) => ({ ...prev, expdate: false }))}
                 onFocus={(e) => {
                   if (!e.target.value) {
                     e.target.type = 'date';
