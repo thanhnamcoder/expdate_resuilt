@@ -177,6 +177,63 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
   const [writeoffDetailLoading, setWriteoffDetailLoading] = useState(false);
   const [writeoffError, setWriteoffError] = useState(null);
   const [writeoffHeaderVisible, setWriteoffHeaderVisible] = useState(false);
+  const [showArchiveViewModal, setShowArchiveViewModal] = useState(false);
+  const [combinedArchiveItems, setCombinedArchiveItems] = useState({ archives: [], writeoff_items: [] });
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveError, setArchiveError] = useState(null);
+  // Archive filter: only month picker (archiveFilterValue in YYYY-MM). Empty = all dates
+  const [archiveFilterValue, setArchiveFilterValue] = useState('');
+
+  const formatVND = (v) => {
+    if (v === null || v === undefined || v === '') return '-';
+    const n = Number(v);
+    if (!Number.isFinite(n)) return '-';
+    return `${Math.round(n).toLocaleString('vi-VN')} ₫`;
+  };
+
+  
+
+  // Apply date filter and sort by created_at desc for archives and writeoff_items
+  const filteredCombinedArchiveItems = useMemo(() => {
+    const archives = (combinedArchiveItems.archives || []).slice();
+    const items = (combinedArchiveItems.writeoff_items || []).slice();
+
+    const matchByFilter = (it) => {
+      if (!archiveFilterValue) return true; // empty means no filtering (all dates)
+      const created = it.created_at || it.createdAt || it.created;
+      const t = parseCreatedAt(created);
+      if (!t) return false;
+      const d = new Date(t);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      return archiveFilterValue === `${year}-${month}`;
+    };
+
+    const filteredArchives = archives.filter(matchByFilter).sort((a, b) => (parseCreatedAt(b.created_at) || 0) - (parseCreatedAt(a.created_at) || 0));
+    const filteredItems = items.filter(matchByFilter).sort((a, b) => (parseCreatedAt(b.created_at) || 0) - (parseCreatedAt(a.created_at) || 0));
+
+    return { archives: filteredArchives, writeoff_items: filteredItems };
+  }, [combinedArchiveItems, archiveFilterValue]);
+  
+  const archiveTotals = useMemo(() => {
+    const archives = (filteredCombinedArchiveItems.archives || []);
+    const items = (filteredCombinedArchiveItems.writeoff_items || []);
+    let total = 0;
+    let totalSpecial = 0;
+
+    const addRow = (unit_cost, qty, special) => {
+      const uc = Number(unit_cost) || 0;
+      const q = Number(qty) || 1;
+      const subtotal = uc * q;
+      total += subtotal;
+      if (special) totalSpecial += subtotal;
+    };
+
+    archives.forEach(a => addRow(a.unit_cost, a.quantity, a.special));
+    items.forEach(it => addRow(it.unit_cost, it.quantity, it.special));
+
+    return { total, totalSpecial };
+  }, [filteredCombinedArchiveItems]);
   const [exportingWriteoff, setExportingWriteoff] = useState(false); // Đang xuất Excel/ảnh của WriteOff
   const [exportingBatchId, setExportingBatchId] = useState(null); // id batch đang export ngay từ danh sách
   const [sharingBatchId, setSharingBatchId] = useState(null); // id batch đang share (gửi email)
@@ -736,6 +793,26 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
     setWriteoffBatchItems([]);
   };
 
+  const openCombinedArchiveView = async () => {
+    setArchiveError(null);
+    setCombinedArchiveItems({ archives: [], writeoff_items: [] });
+    setArchiveLoading(true);
+    try {
+      const res = await authFetch(`${API_URL}/api/accounts/items/writeoff_view/`, { method: 'GET' });
+      const data = await res.json();
+      if (!res.ok) {
+        setArchiveError(data.error || 'Không thể tải dữ liệu archive');
+        return;
+      }
+      setCombinedArchiveItems({ archives: data.archives || [], writeoff_items: data.writeoff_items || [] });
+      setShowArchiveViewModal(true);
+    } catch (e) {
+      setArchiveError('Lỗi khi tải dữ liệu archive');
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
   const handleSelectWriteoffBatch = async (batch) => {
     setWriteoffError(null);
     setWriteoffDetailLoading(true);
@@ -1048,6 +1125,14 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
                         📷
                       </button>
                     ) : null}
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      title="Xem archive"
+                      onClick={(e) => { e.stopPropagation(); openCombinedArchiveView(); }}
+                    >
+                      👁️
+                    </button>
                     {selectedWriteoffBatch ? (
                       <>
                         <button
@@ -1234,6 +1319,79 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
                         </div>
                       ))}
                     </div>
+                  )}
+                  {showArchiveViewModal && (
+                    <>
+                      <div className="modal-backdrop fade show" style={{ zIndex: 1065 }}></div>
+                      <div className="modal fade show" style={{ display: 'block', background: 'rgba(0,0,0,0.5)', zIndex: 1075 }} tabIndex="-1">
+                        <div className="modal-dialog modal-lg" style={{ maxWidth: 1000 }}>
+                          <div className="modal-content">
+                            <div className="modal-header d-flex w-100 align-items-center">
+                              <div className="me-auto">
+                                <h5 className="modal-title mb-0">WriteOff Items</h5>
+                              </div>
+                              <div className="text-center mx-3" style={{ minWidth: 220 }}>
+                                <div className="fw-bold">Total cost: {formatVND(archiveTotals.total)}</div>
+                                <div className="small text-muted">Total cost (special): {formatVND(archiveTotals.totalSpecial)}</div>
+                              </div>
+
+                              <button type="button" className="btn-close" onClick={() => setShowArchiveViewModal(false)}></button>
+                            </div>
+                            <div className="modal-body" style={{ maxHeight: 560, overflowY: 'auto' }}>
+                              {archiveError ? (
+                                <div className="alert alert-danger">{archiveError}</div>
+                              ) : archiveLoading ? (
+                                <div className="text-center py-4"><div className="spinner-border" role="status"></div></div>
+                              ) : (
+                                <>
+                                  <div className="d-flex align-items-center gap-3 mb-2">
+                                    <h6 className="mb-0">Archives</h6>
+                                    <div className="d-flex align-items-center gap-2 ms-auto">
+                                      <input type="month" className="form-control form-control-sm" style={{ width: 160 }} value={archiveFilterValue} onChange={(e) => setArchiveFilterValue(e.target.value)} />
+                                      <button className="btn btn-sm btn-outline-secondary" onClick={() => { setArchiveFilterValue(''); }}>Clear</button>
+                                    </div>
+                                  </div>
+                                  <div className="list-group mb-3">
+                                    {filteredCombinedArchiveItems.archives.map(a => (
+                                      <div key={`a-${a.id}`} className="list-group-item">
+                                        <div className="d-flex justify-content-between">
+                                          <div>
+                                            <strong>{a.itemname || a.name} {a.special ? '⭐' : null}</strong> <small className="text-muted">({a.record_type})</small>
+                                            <div className="small text-muted">Barcode: {a.barcode || '-'}</div>
+                                            <div className="small text-muted">Cost: {formatVND(a.unit_cost)} • Qty: {a.quantity || 1} • Subtotal: {formatVND((Number(a.unit_cost)||0)*(Number(a.quantity)||1))}</div>
+                                          </div>
+                                          <div className="text-end small text-muted">{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {filteredCombinedArchiveItems.archives.length === 0 ? <div className="small text-muted p-2">No archives.</div> : null}
+                                  </div>
+                                  <h6>Current WriteOff Items</h6>
+                                  <div className="list-group">
+                                    {filteredCombinedArchiveItems.writeoff_items.map(it => (
+                                      <div key={`w-${it.id}`} className="list-group-item">
+                                        <div className="d-flex justify-content-between">
+                                          <div>
+                                            <strong>{it.itemname} {it.special ? '⭐' : null}</strong>
+                                            <div className="small text-muted">Barcode: {it.barcode || '-'}</div>
+                                            <div className="small text-muted">Cost: {formatVND(it.unit_cost)} • Qty: {it.quantity || 1} • Subtotal: {formatVND((Number(it.unit_cost)||0)*(Number(it.quantity)||1))}</div>
+                                          </div>
+                                          <div className="text-end small text-muted">{it.created_at ? new Date(it.created_at).toLocaleString() : ''}</div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {filteredCombinedArchiveItems.writeoff_items.length === 0 ? <div className="small text-muted p-2">No current writeoff items.</div> : null}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                            <div className="modal-footer">
+                              <button className="btn btn-secondary" onClick={() => setShowArchiveViewModal(false)}>Close</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>

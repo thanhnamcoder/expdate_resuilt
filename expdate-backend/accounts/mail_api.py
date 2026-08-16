@@ -81,6 +81,7 @@ class SendEmailAPIView(APIView):
                         name=batch.name,
                         total_cost=batch.total_cost,
                         file_paths=batch.file_paths,
+                        created_at=getattr(batch, 'created_at', None),
                     )
                     for item in WriteOffItem.objects.filter(writeoff_batch=batch):
                         WriteOffArchive.objects.create(
@@ -93,9 +94,11 @@ class SendEmailAPIView(APIView):
                             quantity=item.quantity,
                             item_code=item.item_code,
                             unit_cost=item.unit_cost,
+                            special=bool(getattr(item, 'special', False)),
+                            created_at=getattr(item, 'created_at', None) or getattr(batch, 'created_at', None),
                         )
                     batch.delete()
-                    WriteOffArchive.cleanup_old_archives()
+                    # no automatic cleanup anymore
                 except WriteOffBatch.DoesNotExist:
                     return Response({"error": "Batch không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
 

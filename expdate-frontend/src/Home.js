@@ -6,6 +6,8 @@ import './Home.css';
 
 import QrScanner from './QrScanner';
 import MessageBox from './components/MessageBox';
+import Modal from 'react-bootstrap/Modal';
+import Button from 'react-bootstrap/Button';
 import { getMissingFieldsMessage, getServerErrorMessage } from './utils/errorMessages';
 import debounce from 'lodash.debounce';
 import { authFetch } from './utils/authFetch';
@@ -306,6 +308,53 @@ const handleSelectItem = async (item) => {
       console.error(e);
       showMessage('Lỗi khi xóa sản phẩm. Vui lòng kiểm tra kết nối mạng và thử lại.', 'error');
     }
+  };
+
+  const handleRemovePendingWoItem = (itemId, index) => {
+    setPendingWoItems(prev => prev.filter((it, idx) => {
+      if (it && it.id) return String(it.id) !== String(itemId);
+      return idx !== index;
+    }));
+  };
+
+  const [showConfirmDeleteModal, setShowConfirmDeleteModal] = useState(false);
+  const [confirmDeleteTarget, setConfirmDeleteTarget] = useState(null);
+
+  const openConfirmRemovePendingWo = (item, index) => {
+    setConfirmDeleteTarget({ item, index });
+    setShowConfirmDeleteModal(true);
+  };
+
+  const closeConfirmRemovePendingWo = () => {
+    setConfirmDeleteTarget(null);
+    setShowConfirmDeleteModal(false);
+  };
+
+  const confirmRemovePendingWo = () => {
+    if (!confirmDeleteTarget) return closeConfirmRemovePendingWo();
+    const { item, index } = confirmDeleteTarget;
+    handleRemovePendingWoItem(item && item.id ? item.id : null, index);
+    closeConfirmRemovePendingWo();
+  };
+
+  const handleAdjustPendingWoQuantity = (itemId, index, delta) => {
+    setPendingWoItems(prev => prev.map((it, idx) => {
+      const matches = (it && it.id) ? (String(it.id) === String(itemId)) : (idx === index);
+      if (!matches) return it;
+      const current = Number(it.quantity) || 0;
+      const nextQty = Math.max(0, current + Number(delta));
+      return { ...it, quantity: String(nextQty) };
+    }));
+  };
+
+  const togglePendingWoSpecial = (itemId) => {
+    setPendingWoItems(prev => prev.map(it => {
+      if (!it) return it;
+      if (String(it.id) === String(itemId)) {
+        return { ...it, special: !it.special };
+      }
+      return it;
+    }));
   };
 
   const handleEditChange = (field, value) => {
@@ -1525,9 +1574,9 @@ const totalPendingWoCost = pendingWoItems.reduce((sum, item) => {
                                 {it.created_at ? <div className="small text-muted">Ghi nhận: {it.created_at}</div> : null}
                               </div>
                               <div className="ms-2 d-flex flex-column gap-2">
-                                <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => handleEditUserItem(it)}>Sửa</button>
-                                <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteUserItem(it.id)}>Xóa</button>
-                              </div>
+                                    <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => handleEditUserItem(it)}>Sửa</button>
+                                    <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteUserItem(it.id)}>Xóa</button>
+                                  </div>
                             </div>
                           </div>
                         ));
@@ -1612,14 +1661,57 @@ Total Cost: {totalPendingWoCost.toLocaleString('vi-VN', {
                     : null;
                   return (
                   <div key={item.id || index} className="border rounded p-2">
-                    <div className="fw-semibold">{item.itemname}</div>
-                    <div className="small text-muted">
-                      {item.barcode} • SL: {item.quantity}
-{item.unit_cost !== null && item.unit_cost !== undefined
-  ? ` • Cost: ${totalCost.toLocaleString('vi-VN', {
-      maximumFractionDigits: 0,
-    })}₫`
-  : ' • Cost: 0₫'}                    </div>
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div>
+                        <div className="fw-semibold">{item.itemname}</div>
+                        <div className="small text-muted d-flex align-items-center justify-content-between">
+                          <div style={{ minWidth: 120 }}>{item.barcode}</div>
+                          <div className="d-flex align-items-center gap-2">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary"
+                              onClick={(e) => { e.stopPropagation(); handleAdjustPendingWoQuantity(item.id, index, -1); }}
+                              aria-label="Giảm"
+                            >
+                              −
+                            </button>
+                            <div>SL: {item.quantity}</div>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary"
+                              onClick={(e) => { e.stopPropagation(); handleAdjustPendingWoQuantity(item.id, index, 1); }}
+                              aria-label="Tăng"
+                            >
+                              +
+                            </button>
+                            <div className="ms-2">
+                              {item.unit_cost !== null && item.unit_cost !== undefined
+                                ? ` • Cost: ${totalCost.toLocaleString('vi-VN', { maximumFractionDigits: 0 })}₫`
+                                : ' • Cost: 0₫'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="d-flex flex-column gap-2 align-items-end">
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${item.special ? 'btn-warning' : 'btn-outline-secondary'}`}
+                          onClick={(e) => { e.stopPropagation(); togglePendingWoSpecial(item.id); }}
+                          aria-label="Đánh dấu đặc biệt"
+                          title={item.special ? 'Bỏ đánh dấu đặc biệt' : 'Đánh dấu đặc biệt'}
+                        >
+                          <i className={`bi ${item.special ? 'bi-star-fill' : 'bi-star'}`}></i>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={(e) => { e.stopPropagation(); openConfirmRemovePendingWo(item, index); }}
+                          aria-label="Xóa"
+                        >
+                          Xóa
+                        </button>
+                      </div>
+                    </div>
                   </div>
                   );
                 })}
@@ -1627,6 +1719,19 @@ Total Cost: {totalPendingWoCost.toLocaleString('vi-VN', {
             </div>
           </div>
         )}
+
+        <Modal show={showConfirmDeleteModal} onHide={closeConfirmRemovePendingWo}>
+          <Modal.Header closeButton>
+            <Modal.Title>Xác nhận xóa</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            Bạn có chắc chắn muốn xóa mục "{confirmDeleteTarget && confirmDeleteTarget.item ? confirmDeleteTarget.item.itemname : ''}"?
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={closeConfirmRemovePendingWo}>Hủy</Button>
+            <Button variant="danger" onClick={confirmRemovePendingWo}>Xóa</Button>
+          </Modal.Footer>
+        </Modal>
 
         {stocktakeMode === 'date' && (
           <>

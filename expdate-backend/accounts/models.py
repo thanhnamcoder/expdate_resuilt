@@ -38,6 +38,8 @@ class Item(models.Model):
     # Flag to indicate this item was added during a stocktake operation
     stocktake = models.BooleanField(default=False)
     writeoff = models.BooleanField(default=False)
+    # Flag to mark an item as "special"
+    special = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.itemname} ({self.barcode})"
@@ -60,6 +62,8 @@ class WriteOffItem(models.Model):
     quantity = models.IntegerField(default=0)
     item_code = models.CharField(max_length=100, blank=True, null=True, default='')
     unit_cost = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    # Mark this writeoff item as special
+    special = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.itemname} ({self.barcode})"
@@ -78,6 +82,10 @@ class WriteOffArchive(models.Model):
     total_cost = models.DecimalField(max_digits=14, decimal_places=2, default=0, blank=True)
     file_paths = models.TextField(blank=True, default='')
     deleted_at = models.DateTimeField(auto_now_add=True)
+    # Original created_at of the source (item or batch) when it was first created
+    created_at = models.DateTimeField(null=True, blank=True)
+    # Preserve 'special' flag from source item when archived
+    special = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'writeoff_archive'
@@ -85,18 +93,9 @@ class WriteOffArchive(models.Model):
 
     @classmethod
     def cleanup_old_archives(cls, cutoff=None):
-        from datetime import date, datetime, timedelta
-        from django.utils import timezone
-
-        if cutoff is None:
-            cutoff = timezone.now() - timedelta(days=30)
-        elif isinstance(cutoff, date) and not isinstance(cutoff, datetime):
-            cutoff = datetime.combine(cutoff, datetime.min.time())
-            cutoff = timezone.make_aware(cutoff, timezone.get_current_timezone())
-        elif isinstance(cutoff, datetime) and timezone.is_naive(cutoff):
-            cutoff = timezone.make_aware(cutoff, timezone.get_current_timezone())
-
-        return cls.objects.filter(deleted_at__lt=cutoff).delete()
+        # Cleanup previously removed: do not auto-delete archives anymore.
+        # This function is preserved for backward compatibility but is now a no-op.
+        return (0, {})
 
     def __str__(self):
         return f"{self.record_type} #{self.source_id}"

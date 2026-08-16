@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import RegisterView, LoginView, TokenRefreshFromCookieView
-from .item_views import ItemCreateView, ItemBatchCreateView, ItemListByGroupView, ItemDeleteView, ItemUpdateView, UserItemListView, GroupWishlistView, WishlistProductsByNameView, UserDeleteAllItemsView, WriteOffBatchListView, WriteOffBatchItemsView, WriteOffItemDeleteView, WriteOffBatchDeleteView, WriteOffBatchExportView, ProductCostLookupView, ProductCostListView
+from .item_views import ItemCreateView, ItemBatchCreateView, ItemListByGroupView, ItemDeleteView, ItemUpdateView, UserItemListView, GroupWishlistView, WishlistProductsByNameView, UserDeleteAllItemsView, WriteOffBatchListView, WriteOffBatchItemsView, WriteOffItemDeleteView, WriteOffBatchDeleteView, WriteOffBatchExportView, ProductCostLookupView, ProductCostListView, WriteOffCombinedView
 from .item_views_wishlist import WishlistListView, WishlistAddView, WishlistRemoveView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .mail_api import SendEmailAPIView
@@ -15,6 +15,7 @@ urlpatterns = [
     path('items/writeoff_batches/<int:batch_id>/delete/', WriteOffBatchDeleteView.as_view(), name='writeoff-batch-delete'),
     path('items/writeoff_batches/<int:batch_id>/export/', WriteOffBatchExportView.as_view(), name='writeoff-batch-export'),
     path('items/writeoff_items/<int:item_id>/delete/', WriteOffItemDeleteView.as_view(), name='writeoff-item-delete'),
+    path('items/writeoff_view/', WriteOffCombinedView.as_view(), name='writeoff-combined-view'),
     path('items/group/', ItemListByGroupView.as_view(), name='item-list-by-group'),
     path('items/<int:item_id>/delete/', ItemDeleteView.as_view(), name='item-delete'),
     path('items/<int:item_id>/update/', ItemUpdateView.as_view(), name='item-update'),

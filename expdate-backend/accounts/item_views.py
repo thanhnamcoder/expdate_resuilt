@@ -26,6 +26,62 @@ import io
 import re
 import zipfile
 
+
+class WriteOffCombinedView(APIView):
+    """Return both writeoff archives and current writeoff items for a combined view."""
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Archives
+        # Only include item-level archives (exclude batch-level archive records)
+        archives_qs = WriteOffArchive.objects.filter(record_type='item').order_by('-created_at')
+        archives = []
+        for a in archives_qs:
+            user = a.user
+            archives.append({
+                'id': a.id,
+                'record_type': a.record_type,
+                'source_id': a.source_id,
+                'user_id': user.id if user else None,
+                'username': user.username if user else None,
+                'full_name': user.get_full_name() if user else None,
+                'name': a.name,
+                'barcode': a.barcode,
+                'itemname': a.itemname,
+                'quantity': a.quantity,
+                'item_code': a.item_code,
+                'unit_cost': float(a.unit_cost) if a.unit_cost is not None else None,
+                'file_paths': a.file_paths,
+                'special': bool(getattr(a, 'special', False)),
+                'deleted_at': a.deleted_at.isoformat() if a.deleted_at else None,
+                'created_at': a.created_at.isoformat() if a.created_at else None,
+            })
+
+        # Current writeoff items (flatten across batches)
+        items_qs = WriteOffItem.objects.select_related('writeoff_batch', 'writeoff_batch__user').order_by('-id')[:1000]
+        items = []
+        for it in items_qs:
+            batch = getattr(it, 'writeoff_batch', None)
+            batch_user = batch.user if batch else None
+            items.append({
+                'id': it.id,
+                'barcode': it.barcode,
+                'itemname': it.itemname,
+                'item_code': it.item_code,
+                'quantity': it.quantity,
+                'unit_cost': float(it.unit_cost) if getattr(it, 'unit_cost', None) is not None else None,
+                'special': bool(getattr(it, 'special', False)),
+                'batch_id': batch.id if batch else None,
+                'batch_name': batch.name if batch else None,
+                'user_id': batch_user.id if batch_user else None,
+                'username': batch_user.username if batch_user else None,
+                'full_name': batch_user.get_full_name() if batch_user else None,
+                'created_at': getattr(it, 'created_at', None).isoformat() if getattr(it, 'created_at', None) else None,
+            })
+
+        return Response({'archives': archives, 'writeoff_items': items}, status=status.HTTP_200_OK)
+
 class ProductCostLookupView(APIView):
     def get(self, request, item_code):
         product_cost = ProductCost.objects.filter(item_code=item_code).first()
@@ -536,6 +592,7 @@ class ItemBatchCreateView(APIView):
                         item_code=item_code,
                         stocktake=False,
                         writeoff=True,
+                        special=bool(it.get('special', False)),
                     )
 
                     # Create/update WriteOffItem within the batch
@@ -547,6 +604,7 @@ class ItemBatchCreateView(APIView):
                         defaults={
                             'quantity': 0,
                             'unit_cost': unit_cost_value,
+                            'special': bool(it.get('special', False)),
                         },
                     )
                     if created_flag:
@@ -559,6 +617,8 @@ class ItemBatchCreateView(APIView):
                         writeoff_record.unit_cost = unit_cost_value
                     elif created_flag:
                         writeoff_record.unit_cost = None
+                    # persist special flag
+                    writeoff_record.special = bool(it.get('special', False))
                     writeoff_record.save()
 
                     created += 1
@@ -676,13 +736,14 @@ class WriteOffBatchItemsView(APIView):
         items = WriteOffItem.objects.filter(writeoff_batch=batch)
         data = []
         for item in items:
-            data.append({
+                data.append({
                 'id': item.id,
                 'barcode': item.barcode,
                 'itemname': item.itemname,
                 'item_code': item.item_code,
                 'quantity': item.quantity,
                 'unit_cost': float(item.unit_cost) if getattr(item, 'unit_cost', None) is not None else None,
+                'special': bool(getattr(item, 'special', False)),
             })
         return Response({
             'batch': {
@@ -712,8 +773,11 @@ class WriteOffItemDeleteView(APIView):
             return Response({'error': 'Write-off item not found'}, status=status.HTTP_404_NOT_FOUND)
 
         batch = item.writeoff_batch
-        if batch and batch.user_id != user.id and not (user.is_staff or user.is_superuser):
-            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        # Allow deletion regardless of batch ownership or staff status (no permission required)
+        try:
+            print(f"[WriteOffItemDeleteView] Deleting writeoff item id={item_id} requested by user id={getattr(user, 'id', None)} username={getattr(user, 'username', None)}")
+        except Exception:
+            pass
 
         WriteOffArchive.objects.create(
             record_type='item',
@@ -725,6 +789,8 @@ class WriteOffItemDeleteView(APIView):
             quantity=item.quantity,
             item_code=item.item_code,
             unit_cost=item.unit_cost,
+            special=bool(getattr(item, 'special', False)),
+            created_at=getattr(item, 'created_at', None) or (batch.created_at if batch else None),
         )
         item.delete()
         remaining_count = batch.writeoff_items.count() if batch else 0
@@ -746,8 +812,11 @@ class WriteOffBatchDeleteView(APIView):
         except WriteOffBatch.DoesNotExist:
             return Response({'error': 'Write-off batch not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        if batch.user_id != user.id and not (user.is_staff or user.is_superuser):
-            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        # Allow deletion of batches regardless of ownership/staff status (no permission required)
+        try:
+            print(f"[WriteOffBatchDeleteView] Deleting batch id={batch_id} requested by user id={getattr(user, 'id', None)} username={getattr(user, 'username', None)}")
+        except Exception:
+            pass
 
         if batch.file_paths:
             for rel_path in batch.file_paths.split('|'):
@@ -768,6 +837,7 @@ class WriteOffBatchDeleteView(APIView):
             name=batch.name,
             total_cost=batch.total_cost,
             file_paths=batch.file_paths,
+            created_at=getattr(batch, 'created_at', None),
         )
 
         items = list(batch.writeoff_items.all())
@@ -782,6 +852,8 @@ class WriteOffBatchDeleteView(APIView):
                 quantity=item.quantity,
                 item_code=item.item_code,
                 unit_cost=item.unit_cost,
+                special=bool(getattr(item, 'special', False)),
+                created_at=getattr(item, 'created_at', None) or getattr(batch, 'created_at', None),
             )
 
         batch.delete()
@@ -883,6 +955,7 @@ class ItemBatchCreateView(APIView):
                         item_code=item_code,
                         stocktake=False,
                         writeoff=True,
+                        special=bool(it.get('special', False)),
                     )
 
                     # Create/update WriteOffItem within the batch
@@ -894,6 +967,7 @@ class ItemBatchCreateView(APIView):
                         defaults={
                             'quantity': 0,
                             'unit_cost': unit_cost_value,
+                            'special': bool(it.get('special', False)),
                         },
                     )
                     if created_flag:
@@ -905,6 +979,7 @@ class ItemBatchCreateView(APIView):
                         writeoff_record.unit_cost = unit_cost_value
                     elif created_flag:
                         writeoff_record.unit_cost = None
+                    writeoff_record.special = bool(it.get('special', False))
                     writeoff_record.save()
 
                     created += 1

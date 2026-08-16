@@ -10,7 +10,7 @@ export function mergeWoPendingItems(items = [], incomingItem = {}) {
   const existingIndex = nextItems.findIndex((item) => normalizeWoItemKey(item) === itemKey);
 
   if (existingIndex === -1) {
-    return [...nextItems, { ...incomingItem, id: `${Date.now()}-${Math.random()}` }];
+    return [...nextItems, { ...incomingItem, id: `${Date.now()}-${Math.random()}`, special: !!incomingItem.special }];
   }
 
   const existing = nextItems[existingIndex];
@@ -18,6 +18,7 @@ export function mergeWoPendingItems(items = [], incomingItem = {}) {
   const incomingQty = Number(incomingItem.quantity) || 0;
 
   nextItems[existingIndex] = {
+    ...existing,
     ...existing,
     ...incomingItem,
     quantity: String(existingQty + incomingQty),
@@ -48,6 +49,7 @@ export function aggregateWoPayload(pendingItems = [], fallbackGroupName = 'WO') 
         quantity: item.quantity,
         item_code: item.item_code || '',
         unit_cost: item.unit_cost !== undefined ? item.unit_cost : null,
+        special: !!item.special,
       });
       return;
     }
@@ -60,6 +62,7 @@ export function aggregateWoPayload(pendingItems = [], fallbackGroupName = 'WO') 
       quantity: String(existingQty + incomingQty),
       item_code: existing.item_code || item.item_code || '',
       unit_cost: existing.unit_cost !== undefined ? existing.unit_cost : item.unit_cost,
+      special: existing.special || !!item.special,
     };
   });
 
