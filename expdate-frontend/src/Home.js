@@ -1644,7 +1644,7 @@ const totalPendingWoCost = pendingWoItems.reduce((sum, item) => {
     <div className="card-body">
       <div className="d-flex justify-content-between align-items-center mb-2">
         <span className="fw-semibold text-success">
-          Total Cost: {totalPendingWoCost.toLocaleString('vi-VN', { maximumFractionDigits: 0 })} ₫
+          Total Cost: {totalPendingWoCost.toLocaleString('vi-VN', { maximumFractionDigits: 0 })}₫
         </span>
         <span className="badge bg-primary">{pendingWoItems.length} Item</span>
       </div>
