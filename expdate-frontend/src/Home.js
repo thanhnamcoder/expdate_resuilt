@@ -1639,86 +1639,88 @@ const totalPendingWoCost = pendingWoItems.reduce((sum, item) => {
         </div>
       ) : null}
 
-        {isWoMode && pendingWoItems.length > 0 && (
-          <div className="card mb-3">
-            <div className="card-body">
-<div className="d-flex justify-content-between align-items-center mb-2">
-  <div className="d-flex align-items-center gap-3">
-    <span className="fw-semibold text-success">
-Total Cost: {totalPendingWoCost.toLocaleString('vi-VN', {
-  maximumFractionDigits: 0,
-})} ₫    </span>
-  </div>
+ {isWoMode && pendingWoItems.length > 0 && (
+  <div className="card mb-3">
+    <div className="card-body">
+      <div className="d-flex justify-content-between align-items-center mb-2">
+        <span className="fw-semibold text-success">
+          Total Cost: {totalPendingWoCost.toLocaleString('vi-VN', { maximumFractionDigits: 0 })} ₫
+        </span>
+        <span className="badge bg-primary">{pendingWoItems.length} Item</span>
+      </div>
 
-  <span className="badge bg-primary">
-    {pendingWoItems.length} Item
-  </span>
-</div>
-              <div className="d-flex flex-column gap-2" style={{ maxHeight: '220px', overflowY: 'auto' }}>
-                {pendingWoItems.map((item, index) => {
-                  const totalCost = item.unit_cost !== null && item.unit_cost !== undefined 
-                    ? item.unit_cost * (Number(item.quantity) || 0)
-                    : null;
-                  return (
-                  <div key={item.id || index} className="border rounded p-2">
-                    <div className="d-flex justify-content-between align-items-start">
-                      <div>
-                        <div className="fw-semibold">{item.itemname}</div>
-                        <div className="small text-muted d-flex align-items-center justify-content-between">
-                          <div style={{ minWidth: 120 }}>{item.barcode}</div>
-                          <div className="d-flex align-items-center gap-2">
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-secondary"
-                              onClick={(e) => { e.stopPropagation(); handleAdjustPendingWoQuantity(item.id, index, -1); }}
-                              aria-label="Giảm"
-                            >
-                              −
-                            </button>
-                            <div>SL: {item.quantity}</div>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-secondary"
-                              onClick={(e) => { e.stopPropagation(); handleAdjustPendingWoQuantity(item.id, index, 1); }}
-                              aria-label="Tăng"
-                            >
-                              +
-                            </button>
-                            <div className="ms-2">
-                              {item.unit_cost !== null && item.unit_cost !== undefined
-                                ? ` • Cost: ${totalCost.toLocaleString('vi-VN', { maximumFractionDigits: 0 })}₫`
-                                : ' • Cost: 0₫'}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="d-flex flex-column gap-2 align-items-end">
-                        <button
-                          type="button"
-                          className={`btn btn-sm ${item.special ? 'btn-warning' : 'btn-outline-secondary'}`}
-                          onClick={(e) => { e.stopPropagation(); togglePendingWoSpecial(item.id); }}
-                          aria-label="Đánh dấu đặc biệt"
-                          title={item.special ? 'Bỏ đánh dấu đặc biệt' : 'Đánh dấu đặc biệt'}
-                        >
-                          <i className={`bi ${item.special ? 'bi-star-fill' : 'bi-star'}`}></i>
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-danger"
-                          onClick={(e) => { e.stopPropagation(); openConfirmRemovePendingWo(item, index); }}
-                          aria-label="Xóa"
-                        >
-                          Xóa
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  );
-                })}
+      <div className="d-flex flex-column gap-2" style={{ maxHeight: '260px', overflowY: 'auto' }}>
+        {pendingWoItems.map((item, index) => {
+          const totalCost = item.unit_cost !== null && item.unit_cost !== undefined
+            ? item.unit_cost * (Number(item.quantity) || 0)
+            : 0;
+
+          return (
+            <div key={item.id || index} className="border rounded p-2">
+              {/* Hàng 1: Tên item (trái) + star/xóa (phải) */}
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <div className="fw-semibold text-truncate me-2" title={item.itemname}>
+                  {item.itemname}
+                </div>
+                <div className="d-flex gap-1 flex-shrink-0">
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${item.special ? 'btn-warning' : 'btn-outline-secondary'}`}
+                    onClick={(e) => { e.stopPropagation(); togglePendingWoSpecial(item.id); }}
+                    aria-label="Đánh dấu đặc biệt"
+                    title={item.special ? 'Bỏ đánh dấu đặc biệt' : 'Đánh dấu đặc biệt'}
+                  >
+                    <i className={`bi ${item.special ? 'bi-star-fill' : 'bi-star'}`}></i>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-danger"
+                    onClick={(e) => { e.stopPropagation(); openConfirmRemovePendingWo(item, index); }}
+                    aria-label="Xóa"
+                  >
+                    <i className="bi bi-trash"></i>
+                  </button>
+                </div>
+              </div>
+
+              {/* Hàng 2: Barcode (trái) + SL / Cost (phải) - không cuộn ngang */}
+              <div className="d-flex justify-content-between align-items-center">
+                <div className="small text-muted text-truncate" style={{ maxWidth: '35%' }} title={item.barcode}>
+                  {item.barcode}
+                </div>
+
+                <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary px-2"
+                    onClick={(e) => { e.stopPropagation(); handleAdjustPendingWoQuantity(item.id, index, -1); }}
+                    aria-label="Giảm"
+                  >
+                    −
+                  </button>
+                  <span className="small fw-semibold" style={{ minWidth: 20, textAlign: 'center' }}>
+                    {item.quantity}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary px-2"
+                    onClick={(e) => { e.stopPropagation(); handleAdjustPendingWoQuantity(item.id, index, 1); }}
+                    aria-label="Tăng"
+                  >
+                    +
+                  </button>
+                  <span className="badge bg-light text-dark border ms-1">
+                    {totalCost.toLocaleString('vi-VN', { maximumFractionDigits: 0 })}₫
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })}
+      </div>
+    </div>
+  </div>
+)}
 
         <Modal show={showConfirmDeleteModal} onHide={closeConfirmRemovePendingWo}>
           <Modal.Header closeButton>

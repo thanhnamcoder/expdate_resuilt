@@ -1,4 +1,4 @@
 {
-  "client": "https://expdate-app.nguyenthanhnam.io.vn",
-  "server": "https://expdate-api.nguyenthanhnam.io.vn"  
+  "client": "https://expdate-client.nguyenthanhnam.io.vn",
+  "server": "https://expdate-api.nguyenthanhnam.io.vn"
 }
