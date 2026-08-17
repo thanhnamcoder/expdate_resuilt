@@ -34,7 +34,7 @@ class ProductSearchView(APIView):
         search_text = request.GET.get('text', '').strip()
         # Trả về tất cả sản phẩm, không cần search nữa
         all_products = list(ProductData.objects.all().values(
-            "id", "item_barcode", "item_name", "item_code", "department", "category", "sub_category", "vendor_code", "vendor_name"
+            "id", "item_barcode", "item_name", "item_code", "department", "category", "sub_category", "vendor_code", "vendor_name", "unit_cost"
         ))
         user = request.user
         if not user.is_authenticated:
@@ -60,7 +60,7 @@ class ProductDetailView(APIView):
     def get(self, request, id):
         try:
             product = ProductData.objects.filter(id=id).values(
-                "id", "item_barcode", "item_name", "item_code", "department", "category", "sub_category", "vendor_code", "vendor_name"
+                "id", "item_barcode", "item_name", "item_code", "department", "category", "sub_category", "vendor_code", "vendor_name", "unit_cost"
             ).first()
             if product:
                 return Response({

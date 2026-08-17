@@ -121,29 +121,8 @@ function App() {
           setIsLoadingGroupData(false);
         });
 
-      setIsLoadingProductCosts(true);
-      authFetch(`${API_URL}/api/accounts/product-cost/`, { method: 'GET' })
-        .then(res => res.json())
-        .then(data => {
-          const list = Array.isArray(data?.data) ? data.data : [];
-          const nextMap = {};
-          list.forEach(entry => {
-            if (entry?.item_code) {
-              nextMap[String(entry.item_code)] = {
-                item_code: entry.item_code,
-                item_name: entry.item_name || entry.itemname || '',
-                unit_cost: entry.unit_cost ?? null,
-              };
-            }
-          });
-          setProductCostMap(nextMap);
-        })
-        .catch(err => {
-          console.error('Failed to preload product costs (App):', err);
-        })
-        .finally(() => {
-          setIsLoadingProductCosts(false);
-        });
+      // product costs are now included in ProductData; we'll build the map
+      // when `allProducts` is fetched below instead of calling product-cost API.
     }
   }, [isAuthenticated]);
 
@@ -159,8 +138,23 @@ function App() {
     ])
       .then(async ([resProducts, resWishlist]) => {
         const data = await resProducts.json();
-        if (data.data) setAllProducts(data.data);
-        else setAllProducts([]);
+        const products = Array.isArray(data.data) ? data.data : [];
+        setAllProducts(products);
+
+        // Build productCostMap from products using unit_cost present in ProductData
+        const nextMap = {};
+        products.forEach(entry => {
+          const code = entry?.item_code || entry?.item_code === 0 ? String(entry.item_code) : null;
+          if (code) {
+            nextMap[String(code)] = {
+              item_code: entry.item_code,
+              item_name: entry.item_name || entry.itemname || '',
+              unit_cost: entry.unit_cost != null ? Number(entry.unit_cost) : null,
+            };
+          }
+        });
+        setProductCostMap(nextMap);
+
         if (resWishlist.ok) {
           const wishlistData = await resWishlist.json();
           setWishlist(wishlistData.map(item => item.product_code));
@@ -175,6 +169,7 @@ function App() {
       .finally(() => {
         setIsLoadingAllProducts(false);
         setIsLoadingWishlist(false);
+        setIsLoadingProductCosts(false);
       });
   }, []);
 

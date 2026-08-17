@@ -11,7 +11,7 @@ from django.contrib import messages
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import numbers
 from datetime import datetime
-from .models import Profile, Item, ProductData, ProductCost
+from .models import Profile, Item, ProductData
 from django.db import transaction
 from decimal import Decimal, InvalidOperation
 # Monkey patch: Thay đổi hành vi của 'View site' trên admin
@@ -254,11 +254,11 @@ class ItemAdmin(admin.ModelAdmin):
                 try:
                     workbook = load_workbook(excel_file)
                     cost_rows = self._extract_cost_rows(workbook)
-                    created_count, skipped_existing_count, skipped_missing_code_count = self._import_cost_rows(cost_rows)
+                    updated_count, skipped_not_found_count, skipped_missing_code_count = self._import_cost_rows(cost_rows)
 
-                    messages.success(request, f'Import thành công {created_count} item mới.')
-                    if skipped_existing_count:
-                        messages.warning(request, f'Bỏ qua {skipped_existing_count} item đã tồn tại (item_code trùng).')
+                    messages.success(request, f'Cập nhật thành công unit_cost cho {updated_count} item.')
+                    if skipped_not_found_count:
+                        messages.warning(request, f'Bỏ qua {skipped_not_found_count} item không tìm thấy trong ProductData (item_code không khớp).')
                     if skipped_missing_code_count:
                         messages.warning(request, f'Bỏ qua {skipped_missing_code_count} dòng thiếu Item Code.')
                 except Exception as e:
@@ -271,7 +271,7 @@ class ItemAdmin(admin.ModelAdmin):
         return render(request, "admin/csv_form.html", payload)
 
     def _extract_cost_rows(self, workbook):
-        """Đọc 2 sheet P2/P3, lọc còn 3 cột (Item Code, Item Name, Unit Cost),
+        """Đọc 2 sheet P2/P3, lọc còn 2 cột (Item Code, Unit Cost),
         trả về danh sách các dòng dữ liệu (đã bỏ dòng header)."""
         target_sheet_names = ['Physical Inventory Result (P2)', 'Physical Inventory Result (P3)']
         kept_sheets = [s for s in workbook.sheetnames if s in target_sheet_names]
@@ -295,8 +295,8 @@ class ItemAdmin(admin.ModelAdmin):
                 cleaned_row = list(row[0:9]) if len(row) > 0 else []
                 if len(cleaned_row) < 9:
                     cleaned_row.extend([''] * (9 - len(cleaned_row)))
-                # Chỉ giữ lại cột 1, 2, 8 (Item Code, Item Name, Unit Cost)
-                cleaned_row = [cleaned_row[i] for i in range(9) if i not in {0, 3, 4, 5, 6, 7}]
+                # Chỉ giữ lại cột 1 và 8 (Item Code, Unit Cost)
+                cleaned_row = [cleaned_row[i] for i in range(9) if i not in {0, 2, 3, 4, 5, 6, 7}]
                 filtered_rows.append(cleaned_row)
 
             if sheet_name == 'Physical Inventory Result (P2)':
@@ -305,30 +305,24 @@ class ItemAdmin(admin.ModelAdmin):
                 p3_rows = filtered_rows[1:] if filtered_rows else []
 
         all_rows = p2_rows + p3_rows
-        # Dòng đầu tiên (từ P2) là header chữ "Item Code / Item Name / Unit Cost" -> bỏ qua
+        # Dòng đầu tiên (từ P2) là header chữ "Item Code / Unit Cost" -> bỏ qua
         return all_rows[1:] if len(all_rows) > 1 else []
 
     def _import_cost_rows(self, cost_rows):
-        """Chỉ import các item_code chưa tồn tại trong bảng ProductCost. Bỏ qua nếu đã có."""
-        created_count = 0
-        skipped_existing_count = 0
+        """Cập nhật unit_cost trong bảng ProductData dựa trên item_code. Bỏ qua nếu item_code
+        không tồn tại trong ProductData hoặc thiếu Item Code."""
+        updated_count = 0
+        skipped_not_found_count = 0
         skipped_missing_code_count = 0
 
-        existing_codes = set(ProductCost.objects.values_list('item_code', flat=True))
-        seen_in_file = set()
-        products_to_create = []
-
+        # Gom unit_cost mới nhất theo item_code (dòng sau ghi đè dòng trước nếu trùng)
+        cost_by_code = {}
         for row in cost_rows:
             item_code = str(row[0] or '').strip() if len(row) > 0 else ''
-            item_name = str(row[1] or '').strip() if len(row) > 1 else ''
-            raw_cost = row[2] if len(row) > 2 else None
+            raw_cost = row[1] if len(row) > 1 else None
 
             if not item_code:
                 skipped_missing_code_count += 1
-                continue
-
-            if item_code in existing_codes or item_code in seen_in_file:
-                skipped_existing_count += 1
                 continue
 
             try:
@@ -336,17 +330,23 @@ class ItemAdmin(admin.ModelAdmin):
             except (InvalidOperation, ValueError, TypeError):
                 unit_cost = None
 
-            products_to_create.append(
-                ProductCost(item_code=item_code, item_name=item_name, unit_cost=unit_cost)
-            )
-            seen_in_file.add(item_code)
+            cost_by_code[item_code] = unit_cost
 
-        if products_to_create:
+        existing_products = list(ProductData.objects.filter(item_code__in=cost_by_code.keys()))
+        found_codes = {product.item_code for product in existing_products}
+        skipped_not_found_count = len([code for code in cost_by_code if code not in found_codes])
+
+        products_to_update = []
+        for product in existing_products:
+            product.unit_cost = cost_by_code[product.item_code]
+            products_to_update.append(product)
+
+        if products_to_update:
             with transaction.atomic():
-                ProductCost.objects.bulk_create(products_to_create)
-            created_count = len(products_to_create)
+                ProductData.objects.bulk_update(products_to_update, ['unit_cost'])
+            updated_count = len(products_to_update)
 
-        return created_count, skipped_existing_count, skipped_missing_code_count
+        return updated_count, skipped_not_found_count, skipped_missing_code_count
     def _clean_cell_value(self, cell):
         """Helper method để làm sạch giá trị từ cell Excel"""
         return str(cell.value or '').strip()

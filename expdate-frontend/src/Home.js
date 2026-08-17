@@ -212,19 +212,9 @@ const [woNameDraft, setWoNameDraft] = useState('');
       return;
     }
 
+    // No separate product-cost API call anymore. If not found in productCostMap
+    // leave selected cost null so UI can handle it.
     setSelectedItemCost(null);
-    try {
-      const response = await fetch(`${API_URL}/api/accounts/product-cost/${itemCode}/`);
-      if (response.ok) {
-        const data = await response.json();
-        setSelectedItemCost(data.unit_cost ?? null);
-      } else {
-        setSelectedItemCost(null);
-      }
-    } catch (error) {
-      console.error('Error fetching cost:', error);
-      setSelectedItemCost(null);
-    }
   };
 
 const handleSelectItem = async (item) => {
@@ -236,7 +226,8 @@ const handleSelectItem = async (item) => {
   setSelectedItemCode(itemCode);
   setItemOptions([]);
 
-  await fetchItemCost(itemCode);
+  const unitFromItem = item.unit_cost != null ? Number(item.unit_cost) : null;
+  setSelectedItemCost(cachedMeta?.unit_cost ?? unitFromItem ?? null);
   
   // Focus quantity input so user can type amount immediately
   setTimeout(() => {
@@ -468,11 +459,12 @@ const debouncedFetchItem = useCallback(
           if (isScan) {
             const itemCode = item.item_code || '';
             const cachedMeta = productCostMap?.[String(itemCode)] || null;
+            const unitFromItem = item.unit_cost != null ? Number(item.unit_cost) : null;
             try { document.getElementById('itemNameInput').value = cachedMeta?.item_name || item.item_name || ''; } catch (e) {}
             try { document.getElementById('itemBarcodeInput').value = item.item_barcode; } catch (e) {}
             setSelectedItemCode(itemCode);
+            setSelectedItemCost(cachedMeta?.unit_cost ?? unitFromItem ?? null);
             setItemOptions([]);
-            await fetchItemCost(itemCode);
           } else {
             try { if (document.getElementById('itemNameInput')) document.getElementById('itemNameInput').value = ''; } catch (e) {}
             setItemOptions([item]);
@@ -500,11 +492,12 @@ const debouncedFetchItem = useCallback(
             console.log('[scan debug] fuzzy match from allProducts', item);
             const itemCode = item.item_code || '';
             const cachedMeta = productCostMap?.[String(itemCode)] || null;
+            const unitFromItem = item.unit_cost != null ? Number(item.unit_cost) : null;
             try { document.getElementById('itemNameInput').value = cachedMeta?.item_name || item.item_name || ''; } catch (e) {}
             try { document.getElementById('itemBarcodeInput').value = item.item_barcode; } catch (e) {}
             setSelectedItemCode(itemCode);
+            setSelectedItemCost(cachedMeta?.unit_cost ?? unitFromItem ?? null);
             setItemOptions([]);
-            await fetchItemCost(itemCode);
           } else {
             try { if (document.getElementById('itemNameInput')) document.getElementById('itemNameInput').value = ''; } catch (e) {}
             setItemOptions(fuzzy);
@@ -555,11 +548,12 @@ const debouncedFetchItem = useCallback(
         if (isScan) {
           const itemCode = item.item_code || '';
           const cachedMeta = productCostMap?.[String(itemCode)] || null;
+          const unitFromItem = item.unit_cost != null ? Number(item.unit_cost) : null;
           try { document.getElementById('itemNameInput').value = cachedMeta?.item_name || item.item_name || ''; } catch (e) {}
           try { document.getElementById('itemBarcodeInput').value = item.item_barcode; } catch (e) {}
           setSelectedItemCode(itemCode);
+          setSelectedItemCost(cachedMeta?.unit_cost ?? unitFromItem ?? null);
           setItemOptions([]);
-          await fetchItemCost(itemCode);
         } else {
           try { if (document.getElementById('itemNameInput')) document.getElementById('itemNameInput').value = ''; } catch (e) {}
           setItemOptions(data);

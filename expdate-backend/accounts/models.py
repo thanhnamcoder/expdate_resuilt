@@ -110,6 +110,7 @@ class ProductData(models.Model):
     sub_category = models.CharField(max_length=100)
     vendor_code = models.CharField(max_length=50)
     vendor_name = models.CharField(max_length=255)
+    unit_cost = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
 
     class Meta:
         db_table = 'product_data'  # Khớp đúng với bảng trong MySQL
