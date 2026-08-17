@@ -14,10 +14,8 @@ from pathlib import Path
 from datetime import timedelta
 import json
 import os
-import pymysql
 from corsheaders.defaults import default_headers
 
-pymysql.install_as_MySQLdb()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
