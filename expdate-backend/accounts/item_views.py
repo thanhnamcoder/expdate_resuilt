@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import serializers
-from .models import Item, GroupWishlist, ProductData, GroupWishlistName, PackingList, WriteOffArchive, WriteOffBatch, WriteOffItem, ProductCost  # Thêm GroupWishlistName, PackingList
+from .models import Item, GroupWishlist, ProductData, GroupWishlistName, WriteOffArchive, WriteOffBatch, WriteOffItem, ProductCost
 from django.contrib.auth.models import User  # Import the User model
 from django.utils.timezone import now
 from rest_framework.permissions import IsAuthenticated
@@ -352,49 +352,7 @@ class ItemCreateView(APIView):
                     writeoff_record.unit_cost = unit_cost_value
                 writeoff_record.save()
 
-            # --- Nếu là stocktake, đồng thời lưu/cộng dồn vào bảng PackingList (sqlite của Zeid_Bot) ---
-            # Không quan tâm username. Trùng barcode + item_code + expdate => cộng dồn quantity, không thì tạo mới.
-            if stocktake_flag == False and not writeoff_flag:
-                packing_exp_date = format_expdate(expdate)
-                packing_item_code = str(item_code) if item_code is not None else ''
-                try:
-                    def normalize_packing_quantity(value):
-                        try:
-                            return int(value)
-                        except (TypeError, ValueError):
-                            return 0
 
-                    existing_packing = PackingList.objects.using('sqlite').filter(
-                        barcode=data['barcode'],
-                        item_code=packing_item_code,
-                        exp_date=packing_exp_date,
-                    ).first()
-                    if existing_packing:
-                        existing_packing.quantity = normalize_packing_quantity(existing_packing.quantity) + int(data['quantity'])
-                        existing_packing.description = data['itemname']
-                        existing_packing.save(using='sqlite')
-                    else:
-                        # Fallback for rows that already exist under the same item_code/exp_date
-                        # but were created before the barcode-based merge logic.
-                        fallback_packing = PackingList.objects.using('sqlite').filter(
-                            item_code=packing_item_code,
-                            exp_date=packing_exp_date,
-                        ).first()
-                        if fallback_packing:
-                            fallback_packing.barcode = data['barcode']
-                            fallback_packing.quantity = normalize_packing_quantity(fallback_packing.quantity) + int(data['quantity'])
-                            fallback_packing.description = data['itemname']
-                            fallback_packing.save(using='sqlite')
-                        else:
-                            PackingList.objects.using('sqlite').create(
-                                item_code=packing_item_code,
-                                barcode=data['barcode'],
-                                description=data['itemname'],
-                                exp_date=packing_exp_date,
-                                quantity=int(data['quantity']),
-                            )
-                except Exception as packing_err:
-                    print(f"[ItemCreateView] Failed to write PackingList: {packing_err}")
 
             # Recompute counts using aggregated groups (unique product+date)
             today = now().date()

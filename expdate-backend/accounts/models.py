@@ -128,20 +128,3 @@ class GroupWishlist(models.Model):
 
     def __str__(self):
         return f"{self.group} - {self.wishlistname} - {self.product.id}"
-    
-class PackingList(models.Model):
-    # Bảng này đã tồn tại sẵn trong sqlite.db của Zeid_Bot (database alias 'sqlite').
-    # managed = False vì Django không tạo/migrate bảng này, chỉ đọc/ghi vào bảng có sẵn.
-    id = models.AutoField(primary_key=True)
-    item_code = models.CharField(max_length=100, blank=True, null=True)
-    barcode = models.CharField(max_length=100)
-    description = models.CharField(max_length=255)
-    exp_date = models.CharField(max_length=20)  # lưu dạng chuỗi 'DD/MM/YYYY' giống dữ liệu hiện có
-    quantity = models.IntegerField()
- 
-    class Meta:
-        db_table = 'PackingList'
-        managed = False
- 
-    def __str__(self):
-        return f"{self.description} ({self.barcode})"

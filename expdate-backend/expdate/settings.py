@@ -146,12 +146,6 @@ DATABASES = {
             'charset': 'utf8mb4',
         },
     },
-
-    # SQLite của Zeid_Bot
-    'sqlite': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': '/home/thanhnam/Documents/Zalo_App/Zeid_Bot/data/sqlite.db',
-    },
 }
 
 

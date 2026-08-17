@@ -15,7 +15,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from .admin import ItemAdmin
 from .item_views import ItemBatchCreateView, ItemCreateView, ProductCostLookupView, ProductCostListView, WriteOffBatchDeleteView, WriteOffItemDeleteView
 from .mail_api import SendEmailAPIView
-from .models import Item, PackingList, ProductCost, ProductData, WriteOffArchive, WriteOffBatch, WriteOffItem
+from .models import Item, ProductCost, ProductData, WriteOffArchive, WriteOffBatch, WriteOffItem
 
 
 class ItemAdminImportCostTests(TestCase):
@@ -86,64 +86,6 @@ class ProductCostLookupTests(TestCase):
         self.assertEqual(response.data['count'], 2)
         self.assertEqual(response.data['data'][0]['item_code'], 'ITEM-001')
         self.assertEqual(response.data['data'][1]['item_code'], 'ITEM-002')
-
-
-class ItemCreateViewPackingListTests(TestCase):
-    databases = {'default', 'sqlite'}
-
-    def setUp(self):
-        self.user = User.objects.create_user(username='tester', password='secret123')
-        self.factory = APIRequestFactory()
-        with connections['sqlite'].cursor() as cursor:
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS PackingList (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    item_code VARCHAR(100),
-                    barcode VARCHAR(100) NOT NULL,
-                    description VARCHAR(255) NOT NULL,
-                    exp_date VARCHAR(20) NOT NULL,
-                    quantity INTEGER NOT NULL
-                )
-                """
-            )
-
-    def test_create_item_updates_existing_packing_list_when_quantity_is_string(self):
-        PackingList.objects.using('sqlite').create(
-            item_code='',
-            barcode='barcode-1',
-            description='old item',
-            exp_date='03/07/2026',
-            quantity='7',
-        )
-
-        view = ItemCreateView.as_view()
-        request = self.factory.post(
-            '/api/items/',
-            {
-                'barcode': 'barcode-1',
-                'itemname': 'New item',
-                'quantity': '3',
-                'expdate': '03/07/2026',
-                'username': 'tester',
-                'item_code': '',
-                'stocktake': False,
-            },
-            format='json',
-        )
-        force_authenticate(request, user=self.user)
-
-        response = view(request)
-
-        self.assertEqual(response.status_code, 201)
-        packing = PackingList.objects.using('sqlite').filter(
-            item_code='',
-            barcode='barcode-1',
-            exp_date='03/07/2026',
-        ).first()
-        self.assertIsNotNone(packing)
-        self.assertEqual(packing.quantity, 10)
-        self.assertEqual(packing.description, 'New item')
 
 
 class ItemCreateViewWriteoffTests(TestCase):
