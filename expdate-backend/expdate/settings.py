@@ -32,7 +32,7 @@ origin_urls = list(origin_config.values())
 SECRET_KEY = 'django-insecure-khis067xrdp3ooh+tj130z@10)*q*_-dxkwn2*!wg((e%5+pxw'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ['*']
 
