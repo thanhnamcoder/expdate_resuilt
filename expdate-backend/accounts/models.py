@@ -51,6 +51,7 @@ class WriteOffBatch(models.Model):
     file_paths = models.TextField(blank=True, default='')
     total_cost = models.DecimalField(max_digits=14, decimal_places=2, default=0, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    is_refund = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.name} ({self.user.username})"
@@ -86,6 +87,8 @@ class WriteOffArchive(models.Model):
     created_at = models.DateTimeField(null=True, blank=True)
     # Preserve 'special' flag from source item when archived
     special = models.BooleanField(default=False)
+    # Backward-compatible archive flag for refund-related archival records.
+    is_refund_archive = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'writeoff_archive'

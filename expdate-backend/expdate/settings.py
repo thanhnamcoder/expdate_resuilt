@@ -32,7 +32,7 @@ origin_urls = list(origin_config.values())
 SECRET_KEY = 'django-insecure-khis067xrdp3ooh+tj130z@10)*q*_-dxkwn2*!wg((e%5+pxw'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
@@ -130,7 +130,7 @@ WSGI_APPLICATION = 'expdate.wsgi.application'
 
 MYSQL_DB = os.getenv('MYSQL_DB', 'expdate_data')
 MYSQL_USER = os.getenv('MYSQL_USER', 'root')
-MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', '')
+MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', 'Nguyen2004nam@')
 MYSQL_HOST = os.getenv('MYSQL_HOST', '192.168.2.52')
 MYSQL_PORT = os.getenv('MYSQL_PORT', '3306')
 

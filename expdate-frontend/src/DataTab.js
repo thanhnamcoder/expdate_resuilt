@@ -1198,12 +1198,16 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
                       ) : writeoffBatchItems.length === 0 ? (
                         <div>Không có items trong batch này.</div>
                       ) : (
-                        <div className="list-group">
-                          {writeoffBatchItems.map(item => (
+                        <>
+                          <div className="list-group">
+                            {writeoffBatchItems.map(item => (
                             <div key={item.id} className="list-group-item">
                               <div className="d-flex justify-content-between align-items-start">
                                 <div>
-                                  <h6 className="mb-1">{item.itemname}</h6>
+                                  <h6 className="mb-1">
+                                    {item.itemname}
+                                    {item.special ? ' ⭐' : null}
+                                  </h6>
                                   <div className="small text-muted">Item code: {item.item_code || '(không có)'}</div>
                                   <div className="small text-muted">Barcode: {item.barcode}</div>
                                   <div className="small text-muted">Số lượng: {item.quantity} cái</div>
@@ -1231,7 +1235,9 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
                               </div>
                             </div>
                           ))}
-                        </div>
+                          </div>
+
+                        </>
                       )}
                     </>
                   ) : writeoffBatches.length === 0 ? (
@@ -1257,6 +1263,13 @@ const DataTab = ({ groupData, setGroupData, updateUserCounts }) => {
                                 {typeof batch.total_cost === 'number'
                                   ? `${Math.round(batch.total_cost).toLocaleString('vi-VN')} ₫`
                                   : `${batch.total_cost || 0} ₫`}
+                              </div>
+                              <div className="small text-muted">Total cost (special):{' '}
+                                {formatVND(
+                                  (Array.isArray(batch.items) && batch.items.length)
+                                    ? batch.items.reduce((s, it) => s + ((Number(it.unit_cost) || 0) * (Number(it.quantity) || 1) * (it.special ? 1 : 0)), 0)
+                                    : Number(batch.total_special_cost ?? batch.total_special ?? batch.special_cost ?? batch.special_total) || 0
+                                )}
                               </div>
                                   <div className="small text-muted">Total item: <span className="fw-bold">{batch.item_count}</span></div>
                                                                 <div className="small text-muted">Created: {batch.created_at ? new Date(batch.created_at).toLocaleString('vi-VN') : ''}</div>

@@ -324,6 +324,7 @@ class ItemCreateView(APIView):
                     name=data['itemname'],
                     file_paths='|'.join(file_paths) if file_paths else '',
                     total_cost=total_cost,
+                    is_refund=False,
                 )
                 # Persist per-item unit_cost; per-item total_cost is deprecated and set to 0
                 unit_cost_value = None
@@ -526,6 +527,7 @@ class ItemBatchCreateView(APIView):
                 name=name_key,
                 file_paths='|'.join(saved_paths) if saved_paths else '',
                 total_cost=total_cost,
+                is_refund=False,
             )
 
             for it in items:
@@ -664,15 +666,27 @@ class WriteOffBatchListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        batches = WriteOffBatch.objects.annotate(item_count=Count('writeoff_items')).order_by('-created_at')
+        batches = WriteOffBatch.objects.annotate(item_count=Count('writeoff_items')).prefetch_related('writeoff_items').order_by('-created_at')
         data = []
         for batch in batches:
             creator = batch.user
+            # compute total special cost from related items if available
+            total_special = Decimal('0')
+            try:
+                for it in batch.writeoff_items.all():
+                    if getattr(it, 'special', False):
+                        uc = Decimal(str(it.unit_cost)) if getattr(it, 'unit_cost', None) is not None else Decimal('0')
+                        qty = Decimal(str(it.quantity or 1))
+                        total_special += uc * qty
+            except Exception:
+                total_special = Decimal('0')
+
             data.append({
                 'id': batch.id,
                 'name': batch.name,
                 'created_at': batch.created_at.isoformat() if batch.created_at else None,
                 'total_cost': float(batch.total_cost) if batch.total_cost is not None else 0,
+                'total_special_cost': float(total_special),
                 'user_id': creator.id,
                 'username': creator.username,
                 'full_name': creator.get_full_name() or creator.username,
@@ -693,8 +707,9 @@ class WriteOffBatchItemsView(APIView):
 
         items = WriteOffItem.objects.filter(writeoff_batch=batch)
         data = []
+        total_special = Decimal('0')
         for item in items:
-                data.append({
+            data.append({
                 'id': item.id,
                 'barcode': item.barcode,
                 'itemname': item.itemname,
@@ -703,12 +718,24 @@ class WriteOffBatchItemsView(APIView):
                 'unit_cost': float(item.unit_cost) if getattr(item, 'unit_cost', None) is not None else None,
                 'special': bool(getattr(item, 'special', False)),
             })
+
+        # compute total special cost for this batch
+        try:
+            for it in items:
+                if getattr(it, 'special', False):
+                    uc = Decimal(str(it.unit_cost)) if getattr(it, 'unit_cost', None) is not None else Decimal('0')
+                    qty = Decimal(str(it.quantity or 1))
+                    total_special += uc * qty
+        except Exception:
+            total_special = Decimal('0')
+
         return Response({
             'batch': {
                 'id': batch.id,
                 'name': batch.name,
                 'created_at': batch.created_at.isoformat() if batch.created_at else None,
                 'total_cost': float(batch.total_cost) if batch.total_cost is not None else 0,
+                'total_special_cost': float(total_special),
                 'user_id': batch.user.id,
                 'username': batch.user.username,
                 'full_name': batch.user.get_full_name() or batch.user.username,
@@ -748,6 +775,7 @@ class WriteOffItemDeleteView(APIView):
             item_code=item.item_code,
             unit_cost=item.unit_cost,
             special=bool(getattr(item, 'special', False)),
+            is_refund_archive=False,
             created_at=getattr(item, 'created_at', None) or (batch.created_at if batch else None),
         )
         item.delete()
@@ -795,6 +823,7 @@ class WriteOffBatchDeleteView(APIView):
             name=batch.name,
             total_cost=batch.total_cost,
             file_paths=batch.file_paths,
+            is_refund_archive=False,
             created_at=getattr(batch, 'created_at', None),
         )
 
@@ -811,6 +840,7 @@ class WriteOffBatchDeleteView(APIView):
                 item_code=item.item_code,
                 unit_cost=item.unit_cost,
                 special=bool(getattr(item, 'special', False)),
+                is_refund_archive=False,
                 created_at=getattr(item, 'created_at', None) or getattr(batch, 'created_at', None),
             )
 
@@ -889,6 +919,7 @@ class ItemBatchCreateView(APIView):
                 name=name_key,
                 file_paths='|'.join(saved_paths) if saved_paths else '',
                 total_cost=total_cost,
+                is_refund=False,
             )
 
             for it in items:

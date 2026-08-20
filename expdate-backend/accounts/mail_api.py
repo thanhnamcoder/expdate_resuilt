@@ -81,6 +81,7 @@ class SendEmailAPIView(APIView):
                         name=batch.name,
                         total_cost=batch.total_cost,
                         file_paths=batch.file_paths,
+                        is_refund_archive=False,
                         created_at=getattr(batch, 'created_at', None),
                     )
                     for item in WriteOffItem.objects.filter(writeoff_batch=batch):
@@ -95,6 +96,7 @@ class SendEmailAPIView(APIView):
                             item_code=item.item_code,
                             unit_cost=item.unit_cost,
                             special=bool(getattr(item, 'special', False)),
+                            is_refund_archive=False,
                             created_at=getattr(item, 'created_at', None) or getattr(batch, 'created_at', None),
                         )
                     batch.delete()
