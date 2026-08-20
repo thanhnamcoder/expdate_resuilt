@@ -1,4 +1,4 @@
 {
-  "client": "http://localhost:3001",
-  "server": "http://localhost:8000"
+  "client": "https://expdate-client.nguyenthanhnam.io.vn",
+  "server": "https://expdate-api.nguyenthanhnam.io.vn"
 }
