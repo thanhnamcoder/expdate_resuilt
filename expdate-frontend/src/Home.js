@@ -16,6 +16,34 @@ import { getFieldErrorMap } from './utils/formValidation';
 import config from './config.json';
 
 const API_URL = config.server;
+// IndexedDB helpers (same store as Data.js)
+const DB_NAME = 'expdate_products_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'products';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = window.indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = function (e) {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function getAllProductsFromDB() {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  }));
+}
 // Utility: convert date to DD/MM/YYYY
 function toDDMMYYYY(dateStr) {
   if (!dateStr) return '';
@@ -110,6 +138,43 @@ const [woNameDraft, setWoNameDraft] = useState('');
   const [pendingWoItems, setPendingWoItems] = useState([]);
   const [selectedItemCost, setSelectedItemCost] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+
+  // Load cached products from IndexedDB on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cached = await getAllProductsFromDB();
+        if (!cancelled && cached && cached.length) {
+          // ensure sorted by id
+          cached.sort((a,b) => (a.id||0) - (b.id||0));
+          setProducts(cached);
+        }
+      } catch (err) {
+        console.warn('Failed to load cached products', err);
+      } finally {
+        if (!cancelled) setProductsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Listen for cross-component product DB updates and reload cache immediately
+  useEffect(() => {
+    const handler = async (e) => {
+      try {
+        const all = await getAllProductsFromDB();
+        all.sort((a,b)=> (a.id||0) - (b.id||0));
+        setProducts(all);
+      } catch (err) {
+        console.warn('Failed to reload products after update event', err);
+      }
+    };
+    window.addEventListener('products-updated', handler);
+    return () => window.removeEventListener('products-updated', handler);
+  }, []);
 
   // Helper: normalize text for search (remove diacritics, lowercase, collapse punctuation)
   const normalizeForSearch = (s) => {
@@ -439,19 +504,19 @@ const handleSelectItem = async (item) => {
   };
 const debouncedFetchItem = useCallback(
   debounce(async (barcode, isScan = false) => {
-    console.log('[scan debug] debouncedFetchItem start', { barcode, isScan, allProductsCount: allProducts?.length || 0 });
+    console.log('[scan debug] debouncedFetchItem start', { barcode, isScan, cachedProducts: products?.length || 0, allProductsCount: allProducts?.length || 0 });
     if (!barcode) {
       try { if (document.getElementById('itemNameInput')) document.getElementById('itemNameInput').value = ''; } catch (e) {}
       setItemOptions([]);
       return;
     }
 
-    // If we have allProducts loaded, use it for lookup and skip network calls
-    if (allProducts && allProducts.length > 0) {
+    // Prefer using locally cached products for lookup and skip network calls
+    if (products && products.length > 0) {
       setLoading(true);
       try {
         // Exact barcode/code matches first (exact string equality)
-        const exactMatches = allProducts.filter(p => String(p.item_barcode) === String(barcode) || String(p.item_code) === String(barcode));
+        const exactMatches = products.filter(p => String(p.item_barcode) === String(barcode) || String(p.item_code) === String(barcode));
 
         if (exactMatches.length === 1) {
           const item = exactMatches[0];
@@ -477,7 +542,7 @@ const debouncedFetchItem = useCallback(
         } else {
           // Tokenized, diacritic-insensitive fuzzy search across name, barcode, and code
           const tokens = tokenize(barcode);
-          const fuzzy = allProducts.filter(p => {
+          const fuzzy = products.filter(p => {
             const nameNorm = normalizeForSearch(p.item_name || '');
             const barcodeNorm = normalizeForSearch(p.item_barcode || '');
             const codeNorm = normalizeForSearch(p.item_code || '');
@@ -577,7 +642,7 @@ const debouncedFetchItem = useCallback(
       setLoading(false);
     }
   }, 50),
-  [allProducts, productCostMap]
+  [products, productCostMap]
 );
 
 // Fetch the user's item for today (by barcode). Triggered when barcode (scanResult) is present.
@@ -1182,13 +1247,23 @@ const handleAddOptionalName = () => {
     };
   }, [showModal]);
 
-  // When barcode (scanResult) changes, fetch the user's item for today
+  // Previously we queried `/api/items/?barcode=...` here to fetch user's
+  // item for today. That endpoint is now removed. Keep local cache only.
   useEffect(() => {
-    debouncedFetchUserItem(scanResult);
-    return () => {
-      if (userItemAbortRef.current) userItemAbortRef.current.abort();
-    };
-  }, [scanResult, debouncedFetchUserItem]);
+    // Try to populate from window cache if available
+    try {
+      const username = localStorage.getItem('username');
+      if (username && window._userItemsCache && window._userItemsCache[username]) {
+        const cache = window._userItemsCache[username];
+        if (cache && cache.items) {
+          setUserItems(cache.items.map(it => normalizeServerItem(it, 'items')));
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return () => {};
+  }, [scanResult]);
 
   // Xử lý khi chọn phương thức tính HSD
   const handleExpiryMethodChange = (method) => {

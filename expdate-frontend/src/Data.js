@@ -1,6 +1,57 @@
 import React from 'react';
 import { FixedSizeList as List } from 'react-window';
 import Barcode from 'react-barcode';
+import config from './config.json';
+import { authFetch } from './utils/authFetch';
+
+const API_URL = config.server;
+
+// Simple IndexedDB helper for products store
+const DB_NAME = 'expdate_products_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'products';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = window.indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = function (e) {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function getAllProductsFromDB() {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+function putProductsToDB(products) {
+  if (!products || products.length === 0) return Promise.resolve();
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    products.forEach(p => store.put(p));
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+
+function getMaxIdFromDB() {
+  return getAllProductsFromDB().then(arr => {
+    if (!arr || arr.length === 0) return 0;
+    return arr.reduce((m, it) => (it.id > m ? it.id : m), 0);
+  });
+}
 
 function Data({ allProducts, isLoading, wishlist, toggleWishlist, isLoadingWishlist, selectedCards = [], toggleSelectedCard }) {
   const [searchTerm, setSearchTerm] = React.useState("");
@@ -8,12 +59,93 @@ function Data({ allProducts, isLoading, wishlist, toggleWishlist, isLoadingWishl
   const [showWishlist, setShowWishlist] = React.useState(false);
   const [vendorNameFilter, setVendorNameFilter] = React.useState("");
 
+  // Local cached products (IndexedDB-backed)
+  const [products, setProducts] = React.useState([]);
+  const [dbLoading, setDbLoading] = React.useState(true);
+  const [syncing, setSyncing] = React.useState(false);
+
+  // On mount: load cached products, then sync incremental updates from backend.
+  React.useEffect(() => {
+    let cancelled = false;
+    async function initAndSync() {
+      setDbLoading(true);
+      try {
+        const cached = await getAllProductsFromDB();
+        if (!cancelled) {
+          if (cached && cached.length) setProducts(cached);
+        }
+
+        // Determine max id we have and ask backend for new rows
+        const maxId = await getMaxIdFromDB();
+        setSyncing(true);
+        const res = await authFetch(`${API_URL}/api/product-search/?since=${maxId}`);
+        console.debug('[products sync] incremental res status', res.status);
+        if (res.ok) {
+          const json = await res.json();
+          const newRows = json.data || [];
+          if (newRows && newRows.length) {
+            await putProductsToDB(newRows);
+            // merge into state (keep order by id)
+            if (!cancelled) setProducts(prev => {
+              const merged = [...prev, ...newRows];
+              merged.sort((a, b) => a.id - b.id);
+              return merged;
+            });
+          }
+        } else {
+          // If backend rejects (e.g., requires auth) avoid blind full fetch fallback
+          // If unauthorized, bail and let auth flow handle it
+          if (res.status === 401) {
+            console.warn('[products sync] incremental request unauthorized (401) - skipping full fetch');
+          } else {
+            console.warn('[products sync] incremental request failed, trying full fetch fallback', res.status);
+            const fullRes = await authFetch(`${API_URL}/api/product-search/?text=all`);
+            if (fullRes.ok) {
+              const j = await fullRes.json();
+              const all = j.data || [];
+              if (all && all.length) {
+                await putProductsToDB(all);
+                if (!cancelled) setProducts(all.sort((a,b)=>a.id-b.id));
+              }
+            } else {
+              console.warn('[products sync] full fetch fallback also failed', fullRes.status);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Product cache/sync error', err);
+      } finally {
+        if (!cancelled) {
+          setDbLoading(false);
+          setSyncing(false);
+        }
+      }
+    }
+    initAndSync();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Listen for cross-component product DB updates and reload cache immediately
+  React.useEffect(() => {
+    const handler = async (e) => {
+      try {
+        const all = await getAllProductsFromDB();
+        all.sort((a,b)=>a.id-b.id);
+        setProducts(all);
+      } catch (err) {
+        console.warn('Failed to reload products after update event', err);
+      }
+    };
+    window.addEventListener('products-updated', handler);
+    return () => window.removeEventListener('products-updated', handler);
+  }, []);
+
   // Tìm kiếm giống ProductTab: tách từ, tìm theo tên, barcode, code
     const filteredProducts = React.useMemo(() => {
-      if (!searchTerm.trim()) return allProducts;
+      if (!searchTerm.trim()) return products;
       const normalized = searchTerm.trim().toLowerCase();
       const searchWords = normalized.split(" ");
-      return allProducts.filter(product => {
+      return products.filter(product => {
         const name = (product.item_name || "").toLowerCase();
         const barcode = (product.item_barcode || "").toLowerCase();
         const code = (product.item_code || "").toLowerCase();
@@ -23,20 +155,19 @@ function Data({ allProducts, isLoading, wishlist, toggleWishlist, isLoadingWishl
           code.includes(normalized)
         );
       });
-    }, [searchTerm, allProducts]);
-
+    }, [searchTerm, products]);
   // Nếu đang xem wishlist thì chỉ lọc sản phẩm trong wishlist, và lọc thêm theo vendor_name nếu có nhập
   const displayProducts = React.useMemo(() => {
-    let products = showWishlist
+    let items = showWishlist
       ? filteredProducts.filter(p => wishlist.includes(p.item_code))
       : filteredProducts;
     if (showWishlist && vendorNameFilter.trim()) {
       const normalizedVendor = vendorNameFilter.trim().toLowerCase();
-      products = products.filter(
+      items = items.filter(
         p => (p.vendor_name || "").toLowerCase().includes(normalizedVendor)
       );
     }
-    return products;
+    return items;
   }, [showWishlist, filteredProducts, wishlist, vendorNameFilter]);
 
   // Lấy danh sách vendor_name duy nhất trong wishlist
@@ -183,7 +314,7 @@ const Card = ({ index, style, allProducts: products = displayProducts }) => {
         )}
         </div>
       </div>
-      {isLoading ? (
+      {(isLoading || dbLoading) ? (
         <div className="text-center my-4">
           <div className="spinner-border" role="status">
             <span className="visually-hidden">Loading...</span>

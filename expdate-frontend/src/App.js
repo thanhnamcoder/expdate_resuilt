@@ -16,6 +16,53 @@ import Data from './Data';
 import { authFetch } from './utils/authFetch';
 const API_URL = config.server;
 
+// IndexedDB helpers (match Data.js)
+const DB_NAME = 'expdate_products_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'products';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = window.indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = function (e) {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function getAllProductsFromDB() {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+function putProductsToDB(products) {
+  if (!products || products.length === 0) return Promise.resolve();
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    products.forEach(p => store.put(p));
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+
+function getMaxIdFromDB() {
+  return getAllProductsFromDB().then(arr => {
+    if (!arr || arr.length === 0) return 0;
+    return arr.reduce((m, it) => (it.id > m ? it.id : m), 0);
+  });
+}
+
 function ExternalRedirect({ url }) {
   useEffect(() => {
     window.location.href = url;
@@ -126,51 +173,88 @@ function App() {
     }
   }, [isAuthenticated]);
 
-  // Fetch all products và wishlist khi app mount
+  // Incremental product sync on app mount: read local DB then ask backend for new rows
   useEffect(() => {
-    setIsLoadingAllProducts(true);
-    setIsLoadingWishlist(true);
-    Promise.all([
-      authFetch(`${API_URL}/api/product-search/?text=all`, {
-        method: 'GET'
-      }),
-      authFetch(`${API_URL}/api/wishlist/`, { credentials: 'include' })
-    ])
-      .then(async ([resProducts, resWishlist]) => {
-        const data = await resProducts.json();
-        const products = Array.isArray(data.data) ? data.data : [];
-        setAllProducts(products);
+    let cancelled = false;
+    (async () => {
+      setIsLoadingAllProducts(true);
+      setIsLoadingWishlist(true);
+      try {
+        // Load wishlist in parallel
+        const wishlistPromise = authFetch(`${API_URL}/api/wishlist/`, { credentials: 'include' })
+          .then(async res => res.ok ? (await res.json()).map(item => item.product_code) : [] )
+          .catch(() => []);
 
-        // Build productCostMap from products using unit_cost present in ProductData
-        const nextMap = {};
-        products.forEach(entry => {
-          const code = entry?.item_code || entry?.item_code === 0 ? String(entry.item_code) : null;
-          if (code) {
-            nextMap[String(code)] = {
-              item_code: entry.item_code,
-              item_name: entry.item_name || entry.itemname || '',
-              unit_cost: entry.unit_cost != null ? Number(entry.unit_cost) : null,
-            };
+        // Incremental products fetch
+        const maxId = await getMaxIdFromDB();
+        const prodRes = await authFetch(`${API_URL}/api/product-search/?since=${maxId}`);
+        if (prodRes.ok) {
+          const json = await prodRes.json();
+          const newRows = json.data || [];
+          if (newRows && newRows.length) {
+            await putProductsToDB(newRows);
+              try { window.dispatchEvent(new CustomEvent('products-updated', { detail: { rows: newRows } })); } catch(e) {}
           }
-        });
-        setProductCostMap(nextMap);
-
-        if (resWishlist.ok) {
-          const wishlistData = await resWishlist.json();
-          setWishlist(wishlistData.map(item => item.product_code));
+          // Now read the full cached set to populate UI
+          const cached = await getAllProductsFromDB();
+          if (!cancelled) {
+            cached.sort((a,b)=>a.id-b.id);
+            setAllProducts(cached);
+            // Build productCostMap
+            const nextMap = {};
+            cached.forEach(entry => {
+              const code = entry?.item_code || entry?.item_code === 0 ? String(entry.item_code) : null;
+              if (code) {
+                nextMap[String(code)] = {
+                  item_code: entry.item_code,
+                  item_name: entry.item_name || entry.itemname || '',
+                  unit_cost: entry.unit_cost != null ? Number(entry.unit_cost) : null,
+                };
+              }
+            });
+            setProductCostMap(nextMap);
+          }
         } else {
-          setWishlist([]);
+          // Fallback: try full fetch if incremental fails (non-auth errors)
+          if (prodRes.status !== 401) {
+            const fullRes = await authFetch(`${API_URL}/api/product-search/?text=all`);
+            if (fullRes.ok) {
+              const data = await fullRes.json();
+              const products = Array.isArray(data.data) ? data.data : [];
+              await putProductsToDB(products);
+              try { window.dispatchEvent(new CustomEvent('products-updated', { detail: { rows: products } })); } catch(e) {}
+              if (!cancelled) setAllProducts(products);
+              const nextMap = {};
+              products.forEach(entry => {
+                const code = entry?.item_code || entry?.item_code === 0 ? String(entry.item_code) : null;
+                if (code) {
+                  nextMap[String(code)] = {
+                    item_code: entry.item_code,
+                    item_name: entry.item_name || entry.itemname || '',
+                    unit_cost: entry.unit_cost != null ? Number(entry.unit_cost) : null,
+                  };
+                }
+              });
+              setProductCostMap(nextMap);
+            }
+          }
         }
-      })
-      .catch(() => {
+
+        const wl = await wishlistPromise;
+        if (!cancelled) setWishlist(wl || []);
+      } catch (err) {
+        console.error('Product sync error (App):', err);
         setAllProducts([]);
         setWishlist([]);
-      })
-      .finally(() => {
-        setIsLoadingAllProducts(false);
-        setIsLoadingWishlist(false);
-        setIsLoadingProductCosts(false);
-      });
+      } finally {
+        if (!cancelled) {
+          setIsLoadingAllProducts(false);
+          setIsLoadingWishlist(false);
+          setIsLoadingProductCosts(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // Hàm toggleWishlist toàn cục

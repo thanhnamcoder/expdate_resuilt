@@ -381,80 +381,11 @@ class ItemCreateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def get(self, request):
-        """
-        Search for items by barcode (and optional username and date).
-        Query params:
-          - barcode (required)
-          - username (optional, defaults to request.user.username)
-          - date (optional, YYYY-MM-DD or DD/MM/YYYY, defaults to today)
-          - stocktake (optional, 'true'/'false') to filter stocktake flag if model supports it
-        Returns: { data: [ ...items ] }
-        """
-        barcode = request.query_params.get('barcode')
-        if not barcode:
-            return Response({'error': 'barcode query param is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-        username = request.query_params.get('username')
-        date_param = request.query_params.get('date')
-        stocktake_param = request.query_params.get('stocktake')
-
-        # Determine user
-        if username:
-            try:
-                user = User.objects.get(username=username)
-            except User.DoesNotExist:
-                return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-        else:
-            user = request.user
-
-        # Parse date
-        query_date = None
-        if date_param:
-            from datetime import datetime
-            try:
-                query_date = datetime.strptime(date_param, '%Y-%m-%d').date()
-            except Exception:
-                try:
-                    query_date = datetime.strptime(date_param, '%d/%m/%Y').date()
-                except Exception:
-                    return Response({'error': 'Invalid date format. Use YYYY-MM-DD or DD/MM/YYYY.'}, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            query_date = now().date()
-
-        try:
-            qs = Item.objects.filter(user=user, barcode=barcode, expdate=query_date)
-        except (DatabaseError, OperationalError) as db_err:
-            return Response({'error': 'Database error when querying items. Have you run migrations to add new fields?','details': str(db_err)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        if stocktake_param is not None and hasattr(Item, 'stocktake'):
-            stocktake_flag = str(stocktake_param).lower() in ('1', 'true', 'yes')
-            qs = qs.filter(stocktake=stocktake_flag)
-
-        items_data = []
-        # Vietnam timezone for formatting
-        tz_vn = timezone.get_fixed_timezone(7 * 60)
-        for item in qs:
-            item_code_val = ''
-            if hasattr(item, 'item_code'):
-                item_code_val = item.item_code if item.item_code is not None else ''
-            def fmt(d):
-                if not d:
-                    return ''
-                return d.strftime('%d/%m/%Y')
-            items_data.append({
-                'id': item.id,
-                'barcode': item.barcode,
-                'itemname': item.itemname,
-                'quantity': item.quantity,
-                'expdate': fmt(item.expdate),
-                'created_at': timezone.localtime(item.created_at, tz_vn).strftime('%d/%m/%Y %H:%M:%S') if getattr(item, 'created_at', None) else '',
-                'can_edit': (request.user.is_staff or request.user.is_superuser) or (item.user == request.user),
-                'can_delete': (request.user.is_staff or request.user.is_superuser) or (item.user == request.user),
-                'item_code': str(item_code_val),
-                'stocktake': getattr(item, 'stocktake', False) if hasattr(item, 'stocktake') else False,
-            })
-
-        return Response({'data': items_data}, status=status.HTTP_200_OK)
+        # This GET endpoint was previously used to query items by barcode for
+        # frontend convenience. That pattern produced unnecessary per-load
+        # traffic and duplicates an existing item-list API. To simplify the
+        # server surface and avoid accidental usage, GET is now disabled.
+        return Response({'error': 'GET /api/items/ is disabled. Use POST to create items or the user-item list endpoint.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
 class ItemBatchCreateView(APIView):
