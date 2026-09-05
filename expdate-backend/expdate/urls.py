@@ -21,6 +21,7 @@ from django.urls import path, include
 from django.views.static import serve
 from accounts.item_views import ItemCreateView
 from accounts.mysql_views import ProductDataView, ProductSearchView, ProductDetailView
+from aiApi.views import ocr as ai_ocr
 from django.contrib.auth import views as auth_views
 
 urlpatterns = [
@@ -35,6 +36,9 @@ urlpatterns = [
     path('api/product/<path:barcode>/', ProductDataView.as_view(), name='product-data'),  # Direct mapping for /api/product/<barcode>/ (accept slashes)
     path('api/product-search/', ProductSearchView.as_view(), name='product-search'),
     path('api/product-detail/<int:id>/', ProductDetailView.as_view(), name='product-detail'),
+    path('api/ai/', include('aiApi.urls')),
+    path('ocr', ai_ocr, name='aiapi-ocr-legacy'),
+    path('ocr/', ai_ocr, name='aiapi-ocr-legacy-slash'),
     path('api/', include('accounts.urls')),
 
     # Django default password reset URLs

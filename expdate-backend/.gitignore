@@ -1,0 +1,4 @@
+aiApi/.env
+aiApi/.token_quarantine.json
+__pycache__/
+*.py[cod]

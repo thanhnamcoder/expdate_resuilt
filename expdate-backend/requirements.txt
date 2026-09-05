@@ -21,3 +21,6 @@ tzdata==2025.2
 Unidecode==1.4.0
 urllib3==1.26.20
 whitenoise==6.9.0
+requests==2.32.3
+python-dotenv==1.0.1
+github-copilot-sdk==1.0.13
