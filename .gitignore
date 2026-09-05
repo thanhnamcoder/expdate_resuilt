@@ -17,7 +17,9 @@ dist/
 .env.local
 
 # Python env
+.venv/
 .env.*
+/expdate-backend/.env
 
 # IDE
 .vscode/
