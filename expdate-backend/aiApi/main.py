@@ -23,12 +23,13 @@ from .auth import create_token_client, get_token_copilot_quota, get_token_user
 # Load config từ .env
 # =========================================================
 
-load_dotenv(Path(__file__).with_name(".env"))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
 
 TOKEN_QUARANTINE_FALLBACK_SECONDS = 31 * 24 * 60 * 60
 TOKEN_QUARANTINE_PATH = Path(
     os.getenv("COPILOT_TOKEN_QUARANTINE_FILE")
-    or Path(__file__).with_name(".token_quarantine.json")
+    or PROJECT_ROOT / ".token_quarantine.json"
 )
 TOKEN_QUARANTINE_LOCK = threading.Lock()
 
