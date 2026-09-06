@@ -3,19 +3,73 @@ import json
 from asgiref.sync import async_to_sync
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.response import Response
+from rest_framework.exceptions import ParseError
+from rest_framework.generics import GenericAPIView
+from rest_framework.views import APIView
 
 from .authCopilot import get_token_copilot_quota, get_token_user
 from .helperOCR import (
     CopilotOCRRequestError,
     OCR_PROMPT,
     get_copilot_tokens,
+	get_copilot_config,
     get_health,
     ocr_image_urls,
+	update_copilot_config,
 )
+from .serializers import CopilotModelSerializer, CopilotTokenSerializer
 
 
 def health(request):
 	return JsonResponse(get_health())
+
+
+class DocsView(APIView):
+	def get(self, request):
+		return Response({
+		"base_url": "/api/ai/",
+		"routes": [
+			{
+				"path": "docs/",
+				"methods": ["GET"],
+				"description": "Liệt kê các route AI và chức năng.",
+			},
+			{
+				"path": "health/",
+				"methods": ["GET"],
+				"description": "Kiểm tra trạng thái backend AI.",
+			},
+			{
+				"path": "credit/",
+				"methods": ["GET"],
+				"description": "Lấy quota Copilot của các token đã cấu hình.",
+			},
+			{
+				"path": "copilot-config/",
+				"methods": ["GET", "POST"],
+				"description": "Xem hoặc cập nhật model và token Copilot.",
+			},
+			{
+				"path": "model/",
+				"methods": ["GET", "POST"],
+				"description": "Ghi đè model Copilot hiện tại.",
+				"parameters": {"model": "Tên model mới"},
+			},
+			{
+				"path": "token/",
+				"methods": ["GET", "POST"],
+				"description": "Thêm token Copilot vào danh sách hiện tại.",
+				"parameters": {"token": "Token Copilot mới"},
+			},
+			{
+				"path": "ocr/",
+				"methods": ["GET", "POST"],
+				"description": "OCR danh sách ảnh bằng Copilot.",
+				"parameters": {"image_url": "URL ảnh hoặc image_urls là danh sách URL"},
+			},
+		],
+		})
 
 
 def credit(request):
@@ -38,6 +92,98 @@ def credit(request):
 		return JsonResponse({"results": results})
 	except CopilotOCRRequestError as error:
 		return JsonResponse({"detail": error.detail}, status=error.status_code)
+
+
+class CopilotConfigView(APIView):
+	def get(self, request):
+		try:
+			return Response(get_copilot_config())
+		except CopilotOCRRequestError as error:
+			return Response({"detail": error.detail}, status=error.status_code)
+
+	def post(self, request):
+		model = request.data.get("model")
+		token = request.data.get("token")
+		if model is None and token is None:
+			return Response(
+				{"detail": "Cần gửi model hoặc token"},
+				status=400,
+			)
+		try:
+			return Response(update_copilot_config(model=model, token=token))
+		except ValueError as error:
+			return Response({"detail": str(error)}, status=400)
+		except OSError as error:
+			return Response(
+				{"detail": f"Không thể lưu cấu hình Copilot: {error}"},
+				status=500,
+			)
+
+
+class CopilotModelView(GenericAPIView):
+	serializer_class = CopilotModelSerializer
+
+	def _save_model(self, model):
+		if model is None:
+			return Response({"detail": "Cần gửi model"}, status=400)
+		try:
+			return Response(update_copilot_config(model=model))
+		except ValueError as error:
+			return Response({"detail": str(error)}, status=400)
+		except OSError as error:
+			return Response(
+				{"detail": f"Không thể lưu model Copilot: {error}"},
+				status=500,
+			)
+
+	def get(self, request):
+		try:
+			return Response(get_copilot_config())
+		except CopilotOCRRequestError as error:
+			return Response({"detail": error.detail}, status=error.status_code)
+
+	def post(self, request):
+		try:
+			model = request.data.get("model")
+		except ParseError:
+			model = None
+		model = model or request.query_params.get("model")
+		serializer = self.get_serializer(data={"model": model})
+		serializer.is_valid(raise_exception=True)
+		return self._save_model(serializer.validated_data["model"])
+
+
+class CopilotTokenView(GenericAPIView):
+	serializer_class = CopilotTokenSerializer
+
+	def _save_token(self, token):
+		if token is None:
+			return Response({"detail": "Cần gửi token"}, status=400)
+		try:
+			return Response(update_copilot_config(token=token))
+		except ValueError as error:
+			return Response({"detail": str(error)}, status=400)
+		except OSError as error:
+			return Response(
+				{"detail": f"Không thể lưu token Copilot: {error}"},
+				status=500,
+			)
+
+	def get(self, request):
+		try:
+			return Response(get_copilot_config())
+		except CopilotOCRRequestError as error:
+			return Response({"detail": error.detail}, status=error.status_code)
+
+	def post(self, request):
+		try:
+			token = request.data.get("token")
+		except ParseError:
+			token = None
+		token = token or request.query_params.get("token")
+		serializer = self.get_serializer(data={"token": token})
+		serializer.is_valid(raise_exception=True)
+		return self._save_token(serializer.validated_data["token"])
 
 
 def _query_image_urls(request):

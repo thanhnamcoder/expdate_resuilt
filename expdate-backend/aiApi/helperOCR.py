@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 import requests
 from dotenv import load_dotenv
+from dotenv import set_key
 
 from .authCopilot import create_token_client, get_token_copilot_quota
 
@@ -32,6 +33,11 @@ TOKEN_QUARANTINE_PATH = Path(
 )
 TOKEN_QUARANTINE_FALLBACK_SECONDS = 31 * 24 * 60 * 60
 TOKEN_QUARANTINE_LOCK = threading.Lock()
+COPILOT_CONFIG_LOCK = threading.Lock()
+
+
+def _reload_copilot_env():
+	load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 
 def _load_ocr_prompt():
@@ -68,6 +74,10 @@ class CopilotOCRRequestError(Exception):
 
 def _token_key(token):
 	return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _is_valid_copilot_token(token):
+	return token.startswith("github_pat_") and len(token) > len("github_pat_")
 
 
 def _read_quarantined_tokens():
@@ -132,11 +142,16 @@ def quarantine_token(token):
 
 
 def get_copilot_tokens(include_quarantined=False):
+	_reload_copilot_env()
 	raw_tokens = os.getenv("COPILOT_GITHUB_TOKENS", "")
-	tokens = [token.strip() for token in re.split(r"[,\r\n]+", raw_tokens) if token.strip()]
+	tokens = [
+		token.strip()
+		for token in re.split(r"[,\r\n]+", raw_tokens)
+		if _is_valid_copilot_token(token.strip())
+	]
 	if not tokens:
 		token = os.getenv("COPILOT_GITHUB_TOKEN", "").strip()
-		if token:
+		if _is_valid_copilot_token(token):
 			tokens.append(token)
 	if not tokens:
 		raise CopilotOCRRequestError(
@@ -156,6 +171,64 @@ def get_copilot_tokens(include_quarantined=False):
 		[f"...{token[-4:]}" for token in active_tokens],
 	)
 	return active_tokens
+
+
+def get_copilot_config():
+	"""Return safe Copilot configuration metadata for the admin API."""
+	tokens = get_copilot_tokens(include_quarantined=True)
+	return {
+		"model": os.getenv("COPILOT_MODEL", "").strip(),
+		"tokens": [f"...{token[-4:]}" for token in tokens],
+	}
+
+
+def update_copilot_config(model=None, token=None):
+	"""Persist Copilot model and optionally append one token to .env."""
+	_reload_copilot_env()
+	if model is not None:
+		model = str(model).strip()
+		if not model:
+			raise ValueError("model không được để trống")
+	if token is not None:
+		token = str(token).strip()
+		if not token:
+			raise ValueError("token không được để trống")
+		if not _is_valid_copilot_token(token):
+			raise ValueError("token không đúng định dạng")
+
+	with COPILOT_CONFIG_LOCK:
+		current_tokens = [
+			item.strip()
+			for item in re.split(r"[,\r\n]+", os.getenv("COPILOT_GITHUB_TOKENS", ""))
+			if _is_valid_copilot_token(item.strip())
+		]
+		if not current_tokens:
+			fallback = os.getenv("COPILOT_GITHUB_TOKEN", "").strip()
+			if _is_valid_copilot_token(fallback):
+				current_tokens.append(fallback)
+		token_exists = token is not None and token in current_tokens
+		if token and not token_exists:
+			current_tokens.append(token)
+
+		if model is not None:
+			set_key(str(PROJECT_ROOT / ".env"), "COPILOT_MODEL", model)
+			os.environ["COPILOT_MODEL"] = model
+		if token is not None and not token_exists:
+			set_key(
+				str(PROJECT_ROOT / ".env"),
+				"COPILOT_GITHUB_TOKENS",
+				",".join(current_tokens),
+			)
+			os.environ["COPILOT_GITHUB_TOKENS"] = ",".join(current_tokens)
+
+	config = get_copilot_config()
+	if token_exists:
+		config["message"] = "Token đã tồn tại"
+		config["added"] = False
+	elif token is not None:
+		config["message"] = "Đã thêm token"
+		config["added"] = True
+	return config
 
 
 def _download_image(image_url):
