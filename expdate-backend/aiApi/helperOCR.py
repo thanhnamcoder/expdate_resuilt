@@ -321,11 +321,13 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 	tokens = get_copilot_tokens()
 	logger.info("Nhận batch OCR: %d ảnh, %d token, tối đa %d ảnh/token", len(image_urls), len(tokens), MAX_IMAGES_PER_TOKEN)
 	queue = asyncio.Queue()
-	for image_number, image_url in enumerate(image_urls):
-		await queue.put((image_number, image_url))
 	results = {}
+	use_one_image_per_token = len(tokens) >= len(image_urls)
+	if not use_one_image_per_token:
+		for image_number, image_url in enumerate(image_urls):
+			await queue.put((image_number, image_url))
 
-	async def run_token_worker(token):
+	async def run_token_worker(token, assigned_item=None):
 		if is_token_quarantined(token):
 			logger.info("Bỏ qua token ...%s đang quarantine", token[-4:])
 			return
@@ -334,10 +336,17 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 			await client.start()
 			session = await client.create_session(model=model or os.getenv("COPILOT_MODEL"))
 			logger.info("Tạo 1 Copilot session cho token ...%s", token[-4:])
-			while not queue.empty():
-				batch = []
-				while len(batch) < MAX_IMAGES_PER_TOKEN and not queue.empty():
-					batch.append(await queue.get())
+			while True:
+				direct_batch = assigned_item is not None
+				if direct_batch:
+					batch = [assigned_item]
+					assigned_item = None
+				elif queue.empty():
+					break
+				else:
+					batch = []
+					while len(batch) < MAX_IMAGES_PER_TOKEN and not queue.empty():
+						batch.append(await queue.get())
 				if not batch:
 					break
 				jobs = [
@@ -357,15 +366,29 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 					else:
 						results[number] = result
 				if quota_hit:
+					if direct_batch:
+						await queue.put(batch[0])
 					await asyncio.to_thread(quarantine_token, token)
 					logger.warning("Token ...%s hết quota, ảnh được chuyển sang token khác", token[-4:])
 					break
-				for _ in batch:
-					queue.task_done()
+				if not direct_batch:
+					for _ in batch:
+						queue.task_done()
 		finally:
 			await client.stop()
 
-	await asyncio.gather(*(run_token_worker(token) for token in tokens))
+	if use_one_image_per_token:
+		await asyncio.gather(
+			*(run_token_worker(
+				token,
+				(image_number, image_urls[image_number])
+				if image_number < len(image_urls)
+				else None,
+			)
+			 for image_number, token in enumerate(tokens))
+		)
+	else:
+		await asyncio.gather(*(run_token_worker(token) for token in tokens))
 	while not queue.empty():
 		number, url = await queue.get()
 		results[number] = {"image_index": number, "image_url": url, "error": "Không còn token khả dụng"}

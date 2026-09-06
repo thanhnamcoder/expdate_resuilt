@@ -8,6 +8,7 @@ from rest_framework.exceptions import ParseError
 from rest_framework.generics import GenericAPIView
 from rest_framework.views import APIView
 
+from accounts.models import ProductData
 from .authCopilot import get_token_copilot_quota, get_token_user
 from .helperOCR import (
     CopilotOCRRequestError,
@@ -198,9 +199,53 @@ def _query_image_urls(request):
 def _run_ocr(request, image_urls):
 	try:
 		result = async_to_sync(ocr_image_urls)(image_urls, OCR_PROMPT)
+		_enrich_ocr_results(result)
 		return JsonResponse({"results": result})
 	except CopilotOCRRequestError as error:
 		return JsonResponse({"detail": error.detail}, status=error.status_code)
+
+
+def _enrich_ocr_results(results):
+	"""Add catalog barcode and item name to OCR rows using their item codes."""
+	parsed_results = []
+	item_codes = set()
+	for result in results:
+		data = result.get("data")
+		if isinstance(data, str):
+			try:
+				data = json.loads(data)
+			except json.JSONDecodeError:
+				parsed_results.append((result, None))
+				continue
+		if not isinstance(data, dict) or not isinstance(data.get("rows"), list):
+			parsed_results.append((result, None))
+			continue
+		for row in data["rows"]:
+			if isinstance(row, dict):
+				item_code = row.get("item_code")
+				if item_code is not None and str(item_code).strip():
+					item_codes.add(str(item_code).strip())
+		parsed_results.append((result, data))
+
+	products_by_code = {}
+	if item_codes:
+		products = ProductData.objects.filter(
+			item_code__in=item_codes,
+		).order_by("id").values("item_code", "item_barcode", "item_name")
+		for product in products:
+			products_by_code.setdefault(str(product["item_code"]).strip(), product)
+
+	for result, data in parsed_results:
+		if data is None:
+			continue
+		for row in data["rows"]:
+			if not isinstance(row, dict):
+				continue
+			product = products_by_code.get(str(row.get("item_code")).strip())
+			row["barcode"] = product["item_barcode"] if product else None
+			row["itemname"] = product["item_name"] if product else None
+		result["data"] = data
+
 
 
 @csrf_exempt
