@@ -1,4 +1,5 @@
 import json
+import logging
 
 from asgiref.sync import async_to_sync
 from django.http import JsonResponse
@@ -20,6 +21,9 @@ from .helperOCR import (
 	update_copilot_config,
 )
 from .serializers import CopilotModelSerializer, CopilotTokenSerializer
+
+
+logger = logging.getLogger("packing_ocr")
 
 
 def health(request):
@@ -203,6 +207,12 @@ def _run_ocr(request, image_urls):
 		return JsonResponse({"results": result})
 	except CopilotOCRRequestError as error:
 		return JsonResponse({"detail": error.detail}, status=error.status_code)
+	except Exception as error:
+		logger.exception("OCR thất bại khi gọi bằng %s", request.method)
+		return JsonResponse(
+			{"detail": f"OCR thất bại: {error}"},
+			status=502,
+		)
 
 
 def _enrich_ocr_results(results):
