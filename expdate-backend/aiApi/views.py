@@ -4,7 +4,14 @@ from asgiref.sync import async_to_sync
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from .main import OCRServiceError, credit as get_credit, health as get_health, ocr_batch
+from .authCopilot import get_token_copilot_quota, get_token_user
+from .helperOCR import (
+    CopilotOCRRequestError,
+    OCR_PROMPT,
+    get_copilot_tokens,
+    get_health,
+    ocr_image_urls,
+)
 
 
 def health(request):
@@ -13,8 +20,23 @@ def health(request):
 
 def credit(request):
 	try:
-		return JsonResponse(get_credit())
-	except OCRServiceError as error:
+		tokens = get_copilot_tokens(include_quarantined=True)
+		results = []
+		for index, token in enumerate(tokens, start=1):
+			try:
+				user = get_token_user(token)
+				name = user.get("name") or user.get("login") or f"token_{index}"
+			except Exception:
+				name = f"token_{index}"
+			try:
+				quota = get_token_copilot_quota(token)
+			except Exception as error:
+				quota = None
+				results.append({"token_name": name, "error": str(error)})
+			else:
+				results.append({"token_name": name, "credit": quota})
+		return JsonResponse({"results": results})
+	except CopilotOCRRequestError as error:
 		return JsonResponse({"detail": error.detail}, status=error.status_code)
 
 
@@ -27,18 +49,11 @@ def _query_image_urls(request):
 	]
 
 
-def _token_index(request):
-	try:
-		return int(request.GET.get("token_index", "0"))
-	except ValueError:
-		raise OCRServiceError(400, "token_index không hợp lệ") from None
-
-
 def _run_ocr(request, image_urls):
 	try:
-		result = async_to_sync(ocr_batch)(image_urls, _token_index(request))
-		return JsonResponse(result)
-	except OCRServiceError as error:
+		result = async_to_sync(ocr_image_urls)(image_urls, OCR_PROMPT)
+		return JsonResponse({"results": result})
+	except CopilotOCRRequestError as error:
 		return JsonResponse({"detail": error.detail}, status=error.status_code)
 
 

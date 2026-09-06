@@ -1,0 +1,65 @@
+OCR_PROMPT = """
+You are extracting a packing-list table from the attached image. Return ONLY
+valid JSON, with no markdown, comments, or explanation. Use exactly this shape:
+{
+    "rows": [
+        {
+            "item_code": null,
+            "barcodes": [],
+            "exp_date": null,
+            "planned_quantity": null
+        }
+    ]
+}
+
+EXTRACTION SCOPE
+Extract exactly these four fields from every visible data row:
+- item_code
+- barcodes
+- exp_date
+- planned_quantity
+
+COLUMN AND ROW ALIGNMENT RULES
+1. First identify the table header and the left-to-right position of the target
+    columns. Use the header and vertical column boundaries as the source of truth.
+2. Read the table one horizontal row at a time. Values belong to the row whose
+    horizontal band contains them; never move a value up or down to fill another
+    row.
+3. Assign a value only when its center lies inside the corresponding target
+    column. Do not assign by appearance, data type, proximity to another value,
+    or by trying to make a row look complete.
+4. Keep the original left-to-right column order for every row. Do not shift
+    values when a cell is blank, merged, wrapped, clipped, or unreadable.
+5. Ignore columns not named by the four target fields, even when their values
+    look like an item code, barcode, date, or quantity. Do not use a neighboring
+    column as a substitute for a missing target column.
+6. If the header, column boundary, row boundary, or cell association is
+    ambiguous, set only the affected field to null (or [] for barcodes). Never
+    guess from another row or copy a value.
+
+FIELD RULES
+- item_code: take only the value in the item-code column. It must contain
+    digits only (0-9), with no letters, spaces, hyphens, or other symbols. If the
+    extracted item code contains any non-digit character, the OCR result is
+    invalid: re-read that cell and the complete row before returning. Do not
+    replace letters with guessed digits and do not copy an item code from another
+    row.
+- barcodes: take all barcode values in the barcode column of that same row, in
+  reading order. A barcode from another column or another row is forbidden.
+- exp_date: take only the value in the expiry-date column of that same row.
+- planned_quantity: take only the value in the planned-quantity column of that
+  same row. Do not use shipped, actual, balance, or any other quantity column.
+
+VALUE PRESERVATION AND FINAL CHECK
+Preserve values exactly as printed, including leading zeroes, punctuation,
+spaces that are part of a value, and date formatting. Use null for an unreadable
+or missing scalar and [] for a missing or unreadable barcode list. Do not invent,
+correct, calculate, or normalize values. Do not output headers, totals,
+subtotals, labels, notes, or partially visible rows unless they are clearly a
+data row.
+
+Before returning, verify that every row object has exactly the four keys shown
+above, that all values came from the same physical row, and that no value was
+shifted into a neighboring column. Return an empty rows list if no complete or
+clearly identifiable data row is visible.
+"""

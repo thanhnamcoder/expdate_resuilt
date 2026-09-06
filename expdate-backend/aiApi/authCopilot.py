@@ -1,4 +1,5 @@
 import logging
+import time
 
 import requests
 from copilot import CopilotClient
@@ -7,6 +8,8 @@ logger = logging.getLogger("packing_ocr")
 
 
 def get_token_user(token):
+    started_at = time.perf_counter()
+    logger.info("Đọc GitHub user bằng token ...%s", token[-4:])
     response = requests.get(
         "https://api.github.com/user",
         headers={
@@ -21,10 +24,17 @@ def get_token_user(token):
             f"Token không đọc được thông tin GitHub account: "
             f"HTTP {response.status_code}"
         )
+    logger.info(
+        "Đọc GitHub user thành công bằng token ...%s sau %.1fs",
+        token[-4:],
+        time.perf_counter() - started_at,
+    )
     return response.json()
 
 
 def get_token_copilot_quota(token):
+    started_at = time.perf_counter()
+    logger.info("Đọc Copilot credit bằng token ...%s", token[-4:])
     response = requests.get(
         "https://api.github.com/copilot_internal/user",
         headers={
@@ -44,10 +54,16 @@ def get_token_copilot_quota(token):
             "Không đọc được Copilot quota: "
             f"HTTP {response.status_code}"
         )
+    logger.info(
+        "Đọc Copilot credit thành công bằng token ...%s sau %.1fs",
+        token[-4:],
+        time.perf_counter() - started_at,
+    )
     return response.json()
 
 
 def create_token_client(token):
+    logger.info("Tạo Copilot client cho token ...%s", token[-4:])
     return CopilotClient(
         github_token=token,
         use_logged_in_user=False,

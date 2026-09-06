@@ -34,6 +34,30 @@ SECRET_KEY = 'django-insecure-khis067xrdp3ooh+tj130z@10)*q*_-dxkwn2*!wg((e%5+pxw
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'packing_ocr': {
+            'format': '{asctime} [{levelname}] {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'packing_ocr_console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'packing_ocr',
+        },
+    },
+    'loggers': {
+        'packing_ocr': {
+            'handlers': ['packing_ocr_console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
 ALLOWED_HOSTS = ['*']
 
 CORS_ALLOW_HEADERS = list(default_headers)
