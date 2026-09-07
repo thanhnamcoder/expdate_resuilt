@@ -19,8 +19,6 @@ from corsheaders.defaults import default_headers
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-LOG_DIR = BASE_DIR / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 with open(CONFIG_PATH, "r") as f:
     origin_config = json.load(f)
@@ -50,18 +48,10 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'packing_ocr',
         },
-        'packing_ocr_file': {
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': str(LOG_DIR / 'packing_ocr.log'),
-            'maxBytes': 10 * 1024 * 1024,
-            'backupCount': 3,
-            'encoding': 'utf-8',
-            'formatter': 'packing_ocr',
-        },
     },
     'loggers': {
         'packing_ocr': {
-            'handlers': ['packing_ocr_console', 'packing_ocr_file'],
+            'handlers': ['packing_ocr_console'],
             'level': 'INFO',
             'propagate': False,
         },

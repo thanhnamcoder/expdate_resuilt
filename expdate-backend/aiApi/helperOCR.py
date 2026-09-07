@@ -25,8 +25,11 @@ logger = logging.getLogger("packing_ocr")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-MAX_IMAGES_PER_TOKEN = 3
-MAX_CONCURRENT_IMAGES = max(1, int(os.getenv("OCR_MAX_CONCURRENT_IMAGES", "1")))
+MAX_IMAGES_PER_TOKEN = max(1, int(os.getenv("OCR_MAX_IMAGES_PER_TOKEN", "1")))
+MAX_CONCURRENT_COPILOT_RUNTIMES = max(
+	1,
+	int(os.getenv("OCR_MAX_CONCURRENT_COPILOT_RUNTIMES", "1")),
+)
 DOWNLOAD_LIMIT_BYTES = 15 * 1024 * 1024
 PROMPT_PATH = Path(__file__).with_name("promptOCR.txt")
 TOKEN_QUARANTINE_PATH = Path(
@@ -323,7 +326,7 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 	logger.info("Nhận batch OCR: %d ảnh, %d token, tối đa %d ảnh/token", len(image_urls), len(tokens), MAX_IMAGES_PER_TOKEN)
 	queue = asyncio.Queue()
 	results = {}
-	concurrency_limiter = asyncio.Semaphore(MAX_CONCURRENT_IMAGES)
+	runtime_limiter = asyncio.Semaphore(MAX_CONCURRENT_COPILOT_RUNTIMES)
 	use_one_image_per_token = len(tokens) >= len(image_urls)
 	if not use_one_image_per_token:
 		for image_number, image_url in enumerate(image_urls):
@@ -333,52 +336,52 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 		if is_token_quarantined(token):
 			logger.info("Bỏ qua token ...%s đang quarantine", token[-4:])
 			return
-		client = create_token_client(token)
-		try:
-			await client.start()
-			session = await client.create_session(model=model or os.getenv("COPILOT_MODEL"))
-			logger.info("Tạo 1 Copilot session cho token ...%s", token[-4:])
-			while True:
-				direct_batch = assigned_item is not None
-				if direct_batch:
-					batch = [assigned_item]
-					assigned_item = None
-				elif queue.empty():
-					break
-				else:
-					batch = []
-					while len(batch) < MAX_IMAGES_PER_TOKEN and not queue.empty():
-						batch.append(await queue.get())
-				if not batch:
-					break
-				async def limited_ocr(number, url):
-					async with concurrency_limiter:
-						return await _ocr_one(number, url, session, token, prompt)
-
-				jobs = [limited_ocr(number, url) for number, url in batch]
-				batch_results = await asyncio.gather(*jobs, return_exceptions=True)
-				quota_hit = False
-				for item, result in zip(batch, batch_results):
-					number, url = item
-					if isinstance(result, CopilotOCRRequestError):
-						if is_quota_error(result):
-							quota_hit = True
-							await queue.put(item)
-						else:
-							results[number] = {"image_index": number, "image_url": url, "error": result.detail}
-					else:
-						results[number] = result
-				if quota_hit:
+		async with runtime_limiter:
+			logger.info("Khởi động Copilot runtime cho token ...%s", token[-4:])
+			client = create_token_client(token)
+			try:
+				await client.start()
+				session = await client.create_session(model=model or os.getenv("COPILOT_MODEL"))
+				logger.info("Tạo 1 Copilot session cho token ...%s", token[-4:])
+				while True:
+					direct_batch = assigned_item is not None
 					if direct_batch:
-						await queue.put(batch[0])
-					await asyncio.to_thread(quarantine_token, token)
-					logger.warning("Token ...%s hết quota, ảnh được chuyển sang token khác", token[-4:])
-					break
-				if not direct_batch:
-					for _ in batch:
-						queue.task_done()
-		finally:
-			await client.stop()
+						batch = [assigned_item]
+						assigned_item = None
+					elif queue.empty():
+						break
+					else:
+						batch = []
+						while len(batch) < MAX_IMAGES_PER_TOKEN and not queue.empty():
+							batch.append(await queue.get())
+					if not batch:
+						break
+					batch_results = await asyncio.gather(
+						*(_ocr_one(number, url, session, token, prompt) for number, url in batch),
+						return_exceptions=True,
+					)
+					quota_hit = False
+					for item, result in zip(batch, batch_results):
+						number, url = item
+						if isinstance(result, CopilotOCRRequestError):
+							if is_quota_error(result):
+								quota_hit = True
+								await queue.put(item)
+							else:
+								results[number] = {"image_index": number, "image_url": url, "error": result.detail}
+						else:
+							results[number] = result
+					if quota_hit:
+						if direct_batch:
+							await queue.put(batch[0])
+						await asyncio.to_thread(quarantine_token, token)
+						logger.warning("Token ...%s hết quota, ảnh được chuyển sang token khác", token[-4:])
+						break
+					if not direct_batch:
+						for _ in batch:
+							queue.task_done()
+			finally:
+				await client.stop()
 
 	if use_one_image_per_token:
 		await asyncio.gather(
