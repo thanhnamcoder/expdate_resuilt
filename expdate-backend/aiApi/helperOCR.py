@@ -25,14 +25,8 @@ logger = logging.getLogger("packing_ocr")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-MAX_IMAGES_PER_TOKEN = int(os.getenv("OCR_MAX_IMAGES_PER_TOKEN", "1"))
+MAX_IMAGES_PER_TOKEN = 3
 DOWNLOAD_LIMIT_BYTES = 15 * 1024 * 1024
-DOWNLOAD_CHUNK_BYTES = int(os.getenv("OCR_DOWNLOAD_CHUNK_BYTES", str(256 * 1024)))
-# Mỗi CopilotClient spawn một tiến trình runtime CLI riêng (không chỉ là 1 HTTP session
-# nhẹ), nên trên máy yếu/RAM ít phải giới hạn số client sống cùng lúc, nếu không tất cả
-# token sẽ tạo tiến trình cùng lúc và dễ bị OOM kill.
-MAX_CONCURRENT_COPILOT_CLIENTS = int(os.getenv("OCR_MAX_CONCURRENT_CLIENTS", "1"))
-_CLIENT_CONCURRENCY = asyncio.Semaphore(MAX_CONCURRENT_COPILOT_CLIENTS)
 PROMPT_PATH = Path(__file__).with_name("promptOCR.txt")
 TOKEN_QUARANTINE_PATH = Path(
 	os.getenv("COPILOT_TOKEN_QUARANTINE_FILE") or PROJECT_ROOT / ".token_quarantine.json"
@@ -259,7 +253,7 @@ def _download_image(image_url):
 	temporary_path = Path(temporary.name)
 	downloaded_size = 0
 	try:
-		for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_BYTES):
+		for chunk in response.iter_content(chunk_size=1024 * 1024):
 			if not chunk:
 				continue
 			downloaded_size += len(chunk)
@@ -337,60 +331,51 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 		if is_token_quarantined(token):
 			logger.info("Bỏ qua token ...%s đang quarantine", token[-4:])
 			return
-		# Mỗi client ở đây spawn 1 tiến trình runtime Copilot CLI riêng, nên giới hạn
-		# số client được start cùng lúc bằng semaphore để tránh ngốn hết RAM trên máy yếu.
-		async with _CLIENT_CONCURRENCY:
-			logger.info(
-				"Chờ tới lượt khởi động Copilot client cho token ...%s (tối đa %d client song song)",
-				token[-4:],
-				MAX_CONCURRENT_COPILOT_CLIENTS,
-			)
-			client = create_token_client(token)
-			try:
-				await client.start()
-				session = await client.create_session(model=model or os.getenv("COPILOT_MODEL"))
-				logger.info("Tạo 1 Copilot session cho token ...%s", token[-4:])
-				while True:
-					direct_batch = assigned_item is not None
-					if direct_batch:
-						batch = [assigned_item]
-						assigned_item = None
-					elif queue.empty():
-						break
-					else:
-						batch = []
-						while len(batch) < MAX_IMAGES_PER_TOKEN and not queue.empty():
-							batch.append(await queue.get())
-					if not batch:
-						break
-					jobs = [
-						_ocr_one(number, url, session, token, prompt)
-						for number, url in batch
-					]
-					batch_results = await asyncio.gather(*jobs, return_exceptions=True)
-					quota_hit = False
-					for item, result in zip(batch, batch_results):
-						number, url = item
-						if isinstance(result, CopilotOCRRequestError):
-							if is_quota_error(result):
-								quota_hit = True
-								await queue.put(item)
-							else:
-								results[number] = {"image_index": number, "image_url": url, "error": result.detail}
+		client = create_token_client(token)
+		try:
+			await client.start()
+			session = await client.create_session(model=model or os.getenv("COPILOT_MODEL"))
+			logger.info("Tạo 1 Copilot session cho token ...%s", token[-4:])
+			while True:
+				direct_batch = assigned_item is not None
+				if direct_batch:
+					batch = [assigned_item]
+					assigned_item = None
+				elif queue.empty():
+					break
+				else:
+					batch = []
+					while len(batch) < MAX_IMAGES_PER_TOKEN and not queue.empty():
+						batch.append(await queue.get())
+				if not batch:
+					break
+				jobs = [
+					_ocr_one(number, url, session, token, prompt)
+					for number, url in batch
+				]
+				batch_results = await asyncio.gather(*jobs, return_exceptions=True)
+				quota_hit = False
+				for item, result in zip(batch, batch_results):
+					number, url = item
+					if isinstance(result, CopilotOCRRequestError):
+						if is_quota_error(result):
+							quota_hit = True
+							await queue.put(item)
 						else:
-							results[number] = result
-					if quota_hit:
-						if direct_batch:
-							await queue.put(batch[0])
-						await asyncio.to_thread(quarantine_token, token)
-						logger.warning("Token ...%s hết quota, ảnh được chuyển sang token khác", token[-4:])
-						break
-					if not direct_batch:
-						for _ in batch:
-							queue.task_done()
-			finally:
-				await client.stop()
-				logger.info("Đã đóng Copilot client cho token ...%s, giải phóng RAM", token[-4:])
+							results[number] = {"image_index": number, "image_url": url, "error": result.detail}
+					else:
+						results[number] = result
+				if quota_hit:
+					if direct_batch:
+						await queue.put(batch[0])
+					await asyncio.to_thread(quarantine_token, token)
+					logger.warning("Token ...%s hết quota, ảnh được chuyển sang token khác", token[-4:])
+					break
+				if not direct_batch:
+					for _ in batch:
+						queue.task_done()
+		finally:
+			await client.stop()
 
 	if use_one_image_per_token:
 		await asyncio.gather(
