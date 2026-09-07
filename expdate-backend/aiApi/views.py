@@ -202,9 +202,9 @@ def _query_image_urls(request):
 
 def _run_ocr(request, image_urls):
 	try:
-		result = async_to_sync(ocr_image_urls)(image_urls, OCR_PROMPT)
-		_enrich_ocr_results(result)
-		return JsonResponse({"results": result})
+		ocr_response = async_to_sync(ocr_image_urls)(image_urls, OCR_PROMPT)
+		_enrich_ocr_results(ocr_response["results"])
+		return JsonResponse(ocr_response)
 	except CopilotOCRRequestError as error:
 		return JsonResponse({"detail": error.detail}, status=error.status_code)
 	except Exception as error:

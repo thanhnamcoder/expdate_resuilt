@@ -275,8 +275,9 @@ def _download_image(image_url):
 
 async def _ocr_one(image_number, image_url, session, token, prompt):
 	started_at = time.perf_counter()
-	image_path = await asyncio.to_thread(_download_image, image_url)
+	image_path = None
 	try:
+		image_path = await asyncio.to_thread(_download_image, image_url)
 		logger.info("Ảnh %s gửi request OCR trong session của token ...%s", image_number, token[-4:])
 		response = await session.send_and_wait(
 			prompt,
@@ -296,9 +297,10 @@ async def _ocr_one(image_number, image_url, session, token, prompt):
 			"image_index": image_number,
 			"image_url": image_url,
 			"token_suffix": token[-4:],
+			"duration_seconds": round(time.perf_counter() - started_at, 3),
 			"data": response.data.content,
 		}
-		logger.info("Ảnh %s OCR thành công bằng token ...%s sau %.1fs", image_number, token[-4:], time.perf_counter() - started_at)
+		logger.info("Ảnh %s OCR thành công bằng token ...%s sau %.1fs", image_number, token[-4:], result["duration_seconds"])
 		return result
 	except Exception as error:
 		logger.exception(
@@ -306,18 +308,23 @@ async def _ocr_one(image_number, image_url, session, token, prompt):
 			image_number,
 			token[-4:],
 		)
-		raise CopilotOCRRequestError(502, f"OCR thất bại: {error}") from error
+		request_error = CopilotOCRRequestError(502, f"OCR thất bại: {error}")
+		request_error.duration_seconds = round(time.perf_counter() - started_at, 3)
+		raise request_error from error
 	finally:
-		image_path.unlink(missing_ok=True)
+		if image_path is not None:
+			image_path.unlink(missing_ok=True)
 
 
 async def ocr_image_urls(image_urls, prompt, model=None):
 	"""OCR URLs with one Copilot session per token and batches of three images."""
+	started_at = time.perf_counter()
 	if not image_urls:
 		raise CopilotOCRRequestError(400, "Cần ít nhất một image_url")
 	if not prompt or not prompt.strip():
 		raise CopilotOCRRequestError(400, "Thiếu prompt OCR")
 
+	model_used = (model or os.getenv("COPILOT_MODEL") or "").strip()
 	tokens = get_copilot_tokens()
 	logger.info("Nhận batch OCR: %d ảnh, %d token, tối đa %d ảnh/token", len(image_urls), len(tokens), MAX_IMAGES_PER_TOKEN)
 	queue = asyncio.Queue()
@@ -362,7 +369,12 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 							quota_hit = True
 							await queue.put(item)
 						else:
-							results[number] = {"image_index": number, "image_url": url, "error": result.detail}
+							results[number] = {
+								"image_index": number,
+								"image_url": url,
+								"duration_seconds": getattr(result, "duration_seconds", None),
+								"error": result.detail,
+							}
 					else:
 						results[number] = result
 				if quota_hit:
@@ -391,14 +403,24 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 		await asyncio.gather(*(run_token_worker(token) for token in tokens))
 	while not queue.empty():
 		number, url = await queue.get()
-		results[number] = {"image_index": number, "image_url": url, "error": "Không còn token khả dụng"}
+		results[number] = {
+			"image_index": number,
+			"image_url": url,
+			"duration_seconds": None,
+			"error": "Không còn token khả dụng",
+		}
 		queue.task_done()
 	ordered_results = [results[index] for index in range(len(image_urls))]
 	errors = sum(1 for result in ordered_results if "error" in result)
-	logger.info("Hoàn tất batch OCR: %d/%d ảnh thành công", len(ordered_results) - errors, len(ordered_results))
+	total_duration_seconds = round(time.perf_counter() - started_at, 3)
+	logger.info("Hoàn tất batch OCR: %d/%d ảnh thành công sau %.3fs", len(ordered_results) - errors, len(ordered_results), total_duration_seconds)
 	if errors == len(ordered_results):
 		raise CopilotOCRRequestError(502, ordered_results[0]["error"])
-	return ordered_results
+	return {
+		"model_used": model_used,
+		"total_duration_seconds": total_duration_seconds,
+		"results": ordered_results,
+	}
 
 
 def is_quota_error(error):
