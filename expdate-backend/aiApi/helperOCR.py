@@ -26,6 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 MAX_IMAGES_PER_TOKEN = 3
+MAX_CONCURRENT_IMAGES = max(1, int(os.getenv("OCR_MAX_CONCURRENT_IMAGES", "1")))
 DOWNLOAD_LIMIT_BYTES = 15 * 1024 * 1024
 PROMPT_PATH = Path(__file__).with_name("promptOCR.txt")
 TOKEN_QUARANTINE_PATH = Path(
@@ -322,6 +323,7 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 	logger.info("Nhận batch OCR: %d ảnh, %d token, tối đa %d ảnh/token", len(image_urls), len(tokens), MAX_IMAGES_PER_TOKEN)
 	queue = asyncio.Queue()
 	results = {}
+	concurrency_limiter = asyncio.Semaphore(MAX_CONCURRENT_IMAGES)
 	use_one_image_per_token = len(tokens) >= len(image_urls)
 	if not use_one_image_per_token:
 		for image_number, image_url in enumerate(image_urls):
@@ -349,10 +351,11 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 						batch.append(await queue.get())
 				if not batch:
 					break
-				jobs = [
-					_ocr_one(number, url, session, token, prompt)
-					for number, url in batch
-				]
+				async def limited_ocr(number, url):
+					async with concurrency_limiter:
+						return await _ocr_one(number, url, session, token, prompt)
+
+				jobs = [limited_ocr(number, url) for number, url in batch]
 				batch_results = await asyncio.gather(*jobs, return_exceptions=True)
 				quota_hit = False
 				for item, result in zip(batch, batch_results):
