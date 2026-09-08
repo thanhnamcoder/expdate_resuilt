@@ -338,11 +338,8 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 		if is_token_quarantined(token):
 			logger.info("Bỏ qua token ...%s đang quarantine", token[-4:])
 			return
-		client = create_token_client(token)
+		client = None
 		try:
-			await client.start()
-			session = await client.create_session(model=model or os.getenv("COPILOT_MODEL"))
-			logger.info("Tạo 1 Copilot session cho token ...%s", token[-4:])
 			while True:
 				direct_batch = assigned_item is not None
 				if direct_batch:
@@ -356,6 +353,11 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 						batch.append(await queue.get())
 				if not batch:
 					break
+				if client is None:
+					client = create_token_client(token)
+					await client.start()
+					session = await client.create_session(model=model or os.getenv("COPILOT_MODEL"))
+					logger.info("Tạo 1 Copilot session cho token ...%s", token[-4:])
 				jobs = [
 					_ocr_one(number, url, session, token, prompt)
 					for number, url in batch
@@ -387,7 +389,8 @@ async def ocr_image_urls(image_urls, prompt, model=None):
 					for _ in batch:
 						queue.task_done()
 		finally:
-			await client.stop()
+			if client is not None:
+				await client.stop()
 
 	if use_one_image_per_token:
 		await asyncio.gather(
