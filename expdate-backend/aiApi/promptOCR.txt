@@ -3,18 +3,16 @@ Trích xuất bảng packing-list từ ảnh đính kèm.
 
 Với MỖI dòng vật lý trong bảng (kể cả khi nhiều dòng có giá trị giống hệt nhau),
 tạo một object riêng với 3 trường:
-- item_code (chỉ chữ số, giữ số 0 đầu)
+- item_code
 - exp_date (giữ nguyên định dạng ngày như in trên bảng)
 - planned_quantity (lấy đúng cột "planned quantity", không lấy shipped/actual/received)
 
 Quy tắc:
 1. Không gộp, không xóa, không suy luận dòng trùng lặp — mỗi dòng vật lý = 1 object, kể cả khi 5 dòng liên tiếp giống hệt nhau.
 2. Lấy giá trị đúng theo vị trí cột, không đoán hay lấy từ dòng/cột khác.
-3. Ô trống, mờ, không đọc được → để null cho đúng trường đó, không xóa cả dòng.
+3. Ô trống, mờ, không đọc được → đọc lại để không bỏ sót dữ liệu.
 4. Bỏ qua header, tổng, ghi chú, dòng trống.
 5. Giữ đúng thứ tự từ trên xuống dưới.
-
-Trước khi trả kết quả, đếm lại số dòng vật lý trong ảnh và đảm bảo số object khớp chính xác.
 
 Chỉ trả JSON, không markdown, không giải thích:
 {
