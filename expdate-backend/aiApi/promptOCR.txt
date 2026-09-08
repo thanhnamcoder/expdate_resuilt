@@ -1,61 +1,26 @@
 OCR_PROMPT = """
-You are extracting a packing-list table from the attached image. Return ONLY
-valid JSON, with no markdown, comments, or explanation. Use exactly this shape:
+Trích xuất bảng packing-list từ ảnh đính kèm.
+
+Với MỖI dòng vật lý trong bảng (kể cả khi nhiều dòng có giá trị giống hệt nhau),
+tạo một object riêng với 3 trường:
+- item_code (chỉ chữ số, giữ số 0 đầu)
+- exp_date (giữ nguyên định dạng ngày như in trên bảng)
+- planned_quantity (lấy đúng cột "planned quantity", không lấy shipped/actual/received)
+
+Quy tắc:
+1. Không gộp, không xóa, không suy luận dòng trùng lặp — mỗi dòng vật lý = 1 object, kể cả khi 5 dòng liên tiếp giống hệt nhau.
+2. Lấy giá trị đúng theo vị trí cột, không đoán hay lấy từ dòng/cột khác.
+3. Ô trống, mờ, không đọc được → để null cho đúng trường đó, không xóa cả dòng.
+4. Bỏ qua header, tổng, ghi chú, dòng trống.
+5. Giữ đúng thứ tự từ trên xuống dưới.
+
+Trước khi trả kết quả, đếm lại số dòng vật lý trong ảnh và đảm bảo số object khớp chính xác.
+
+Chỉ trả JSON, không markdown, không giải thích:
 {
     "rows": [
-        {
-            "item_code": null,
-            "exp_date": null,
-            "planned_quantity": null
-        }
+        {"item_code": null, "exp_date": null, "planned_quantity": null}
     ]
 }
-
-EXTRACTION SCOPE
-Extract exactly these three fields from every visible data row:
-- item_code
-- exp_date
-- planned_quantity
-
-COLUMN AND ROW ALIGNMENT RULES
-1. First identify the table header and the left-to-right position of the target
-    columns. Use the header and vertical column boundaries as the source of truth.
-2. Read the table one horizontal row at a time. Values belong to the row whose
-    horizontal band contains them; never move a value up or down to fill another
-    row.
-3. Assign a value only when its center lies inside the corresponding target
-    column. Do not assign by appearance, data type, proximity to another value,
-    or by trying to make a row look complete.
-4. Keep the original left-to-right column order for every row. Do not shift
-    values when a cell is blank, merged, wrapped, clipped, or unreadable.
-5. Ignore columns not named by the three target fields, even when their values
-    look like an item code, date, or quantity. Do not use a neighboring
-    column as a substitute for a missing target column.
-6. If the header, column boundary, row boundary, or cell association is
-    ambiguous, set only the affected field to null. Never
-    guess from another row or copy a value.
-
-FIELD RULES
-- item_code: take only the value in the item-code column. It must contain
-    digits only (0-9), with no letters, spaces, hyphens, or other symbols. If the
-    extracted item code contains any non-digit character, the OCR result is
-    invalid: re-read that cell and the complete row before returning. Do not
-    replace letters with guessed digits and do not copy an item code from another
-    row.
-- exp_date: take only the value in the expiry-date column of that same row.
-- planned_quantity: take only the value in the planned-quantity column of that
-  same row. Do not use shipped, actual, balance, or any other quantity column.
-
-VALUE PRESERVATION AND FINAL CHECK
-Preserve values exactly as printed, including leading zeroes, punctuation,
-spaces that are part of a value, and date formatting. Use null for an unreadable
-or missing scalar. Do not invent,
-correct, calculate, or normalize values. Do not output headers, totals,
-subtotals, labels, notes, or partially visible rows unless they are clearly a
-data row.
-
-Before returning, verify that every row object has exactly the three keys shown
-above, that all values came from the same physical row, and that no value was
-shifted into a neighboring column. Return an empty rows list if no complete or
-clearly identifiable data row is visible.
+Nếu không có dòng dữ liệu nào, trả {"rows": []}.
 """
