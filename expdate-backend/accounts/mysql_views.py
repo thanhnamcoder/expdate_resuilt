@@ -29,6 +29,84 @@ class ProductDataView(APIView):
             return Response({"error": str(err)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class ProductDataByItemCodeView(APIView):
+    def get(self, request, item_code):
+        try:
+            query = (item_code or '').strip()
+            if not query:
+                return Response({"message": "No product found"}, status=status.HTTP_404_NOT_FOUND)
+
+            product = ProductData.objects.filter(item_code=query).values(
+                'item_code', 'item_barcode', 'item_name'
+            ).first()
+            if not product:
+                return Response({"message": "No product found"}, status=status.HTTP_404_NOT_FOUND)
+
+            return Response({
+                "message": "Product data retrieved successfully",
+                "data": {
+                    "item_code": product['item_code'],
+                    "barcode": product['item_barcode'],
+                    "item_name": product['item_name'],
+                },
+            }, status=status.HTTP_200_OK)
+        except Exception as err:
+            return Response({"error": str(err)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ProductDataByItemCodesView(APIView):
+    def _get_item_codes(self, request):
+        if request.method == 'GET':
+            raw_codes = request.query_params.getlist('item_codes')
+        else:
+            payload = request.data
+            raw_codes = payload.get('item_codes') if isinstance(payload, dict) else payload
+
+        if not isinstance(raw_codes, list):
+            return None
+
+        item_codes = []
+        for code in raw_codes:
+            item_codes.extend(str(code).split(','))
+        return [code.strip() for code in item_codes if code.strip()]
+
+    def _lookup(self, request):
+        item_codes = self._get_item_codes(request)
+        if not item_codes:
+            return Response(
+                {'error': 'item_codes must be a non-empty list'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        products = ProductData.objects.filter(item_code__in=item_codes).values(
+            'item_code', 'item_barcode', 'item_name'
+        )
+        products_by_code = {product['item_code']: product for product in products}
+        data = [
+            {
+                'item_code': code,
+                'barcode': products_by_code[code]['item_barcode'],
+                'item_name': products_by_code[code]['item_name'],
+            }
+            for code in item_codes
+            if code in products_by_code
+        ]
+
+        if not data:
+            return Response({'message': 'No product found'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            'message': 'Product data retrieved successfully',
+            'data': data,
+        }, status=status.HTTP_200_OK)
+
+    def get(self, request):
+        return self._lookup(request)
+
+    def post(self, request):
+        return self._lookup(request)
+
+
 class ProductSearchView(APIView):
     def get(self, request):
         # Support incremental sync via `since` query param (id-based)

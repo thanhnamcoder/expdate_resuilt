@@ -20,7 +20,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.views.static import serve
 from accounts.item_views import ItemCreateView
-from accounts.mysql_views import ProductDataView, ProductSearchView, ProductDetailView
+from accounts.mysql_views import ProductDataView, ProductDataByItemCodeView, ProductDataByItemCodesView, ProductSearchView, ProductDetailView
 from aiApi.views import ocr as ai_ocr
 from django.contrib.auth import views as auth_views
 
@@ -34,6 +34,8 @@ urlpatterns = [
     path('accounts/', include('accounts.urls')),
     path('api/items/', ItemCreateView.as_view(), name='item-create'),  # Direct mapping for /api/items/
     path('api/product/<path:barcode>/', ProductDataView.as_view(), name='product-data'),  # Direct mapping for /api/product/<barcode>/ (accept slashes)
+    path('api/product-by-item-code/', ProductDataByItemCodesView.as_view(), name='product-data-by-item-codes'),
+    path('api/product-by-item-code/<path:item_code>/', ProductDataByItemCodeView.as_view(), name='product-data-by-item-code'),
     path('api/product-search/', ProductSearchView.as_view(), name='product-search'),
     path('api/product-detail/<int:id>/', ProductDetailView.as_view(), name='product-detail'),
     path('api/ai/', include('aiApi.urls')),

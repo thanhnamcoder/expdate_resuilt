@@ -15,6 +15,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from .admin import ItemAdmin
 from .item_views import ItemBatchCreateView, ItemCreateView, ProductCostLookupView, ProductCostListView, WriteOffBatchDeleteView, WriteOffItemDeleteView
 from .mail_api import SendEmailAPIView
+from .mysql_views import ProductDataByItemCodeView, ProductDataByItemCodesView
 from .models import Item, ProductCost, ProductData, WriteOffArchive, WriteOffBatch, WriteOffItem
 
 
@@ -86,6 +87,72 @@ class ProductCostLookupTests(TestCase):
         self.assertEqual(response.data['count'], 2)
         self.assertEqual(response.data['data'][0]['item_code'], 'ITEM-001')
         self.assertEqual(response.data['data'][1]['item_code'], 'ITEM-002')
+
+
+class ProductDataByItemCodeTests(TestCase):
+    def test_lookup_returns_barcode_and_item_name(self):
+        ProductData.objects.create(
+            item_barcode='8931234567890',
+            item_code='ITEM-001',
+            item_name='Test Item',
+            department='',
+            category='',
+            sub_category='',
+            vendor_code='',
+            vendor_name='',
+        )
+
+        request = APIRequestFactory().get('/api/product-by-item-code/ITEM-001/')
+        response = ProductDataByItemCodeView.as_view()(request, item_code='ITEM-001')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data'], {
+            'item_code': 'ITEM-001',
+            'barcode': '8931234567890',
+            'item_name': 'Test Item',
+        })
+
+    def test_lookup_returns_not_found_for_unknown_item_code(self):
+        request = APIRequestFactory().get('/api/product-by-item-code/UNKNOWN/')
+        response = ProductDataByItemCodeView.as_view()(request, item_code='UNKNOWN')
+
+        self.assertEqual(response.status_code, 404)
+
+
+class ProductDataByItemCodesTests(TestCase):
+    def setUp(self):
+        ProductData.objects.create(
+            item_barcode='111', item_code='ITEM-001', item_name='First',
+            department='', category='', sub_category='', vendor_code='', vendor_name='',
+        )
+        ProductData.objects.create(
+            item_barcode='222', item_code='ITEM-002', item_name='Second',
+            department='', category='', sub_category='', vendor_code='', vendor_name='',
+        )
+
+    def test_lookup_accepts_item_code_list_and_preserves_order(self):
+        request = APIRequestFactory().get(
+            '/api/product-by-item-code/?item_codes=ITEM-002,ITEM-001'
+        )
+        response = ProductDataByItemCodesView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item['item_code'] for item in response.data['data']],
+            ['ITEM-002', 'ITEM-001'],
+        )
+        self.assertEqual(response.data['data'][0]['barcode'], '222')
+
+    def test_lookup_accepts_item_code_list_in_post_body(self):
+        request = APIRequestFactory().post(
+            '/api/product-by-item-code/',
+            {'item_codes': ['ITEM-001', 'ITEM-002']},
+            format='json',
+        )
+        response = ProductDataByItemCodesView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data'][1]['item_name'], 'Second')
 
 
 class ItemCreateViewWriteoffTests(TestCase):
